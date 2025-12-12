@@ -1,102 +1,27 @@
 {
-  "name": "@igorppbr/medusa-v2-fedex-fulfillment",
-  "version": "1.0.4",
-  "description": "FedEx integration for Medusa V2",
-  "author": "Igor Ludgero Miura <igorlmiura@gmail.com>",
+  "name": "medusa-dhl-ecommerce-fulfillment",
+  "version": "1.0.0",
+  "description": "DHL eCommerce fulfillment provider for Medusa",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "author": "",
   "license": "MIT",
-  "homepage": "https://github.com/igorppbr/medusa-fedex-fulfillment#readme",
-  "bugs": {
-    "url": "https://github.com/igorppbr/medusa-fedex-fulfillment/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/igorppbr/medusa-fedex-fulfillment.git"
-  },
-  "files": [
-    ".medusa/server"
-  ],
-  "main": ".medusa/server/src/index.js",
-  "exports": {
-    ".": {
-      "import": "./.medusa/server/src/index.js",
-      "require": "./.medusa/server/src/index.js"
-    },
-    "./admin": {
-      "import": "./.medusa/server/src/admin/index.mjs",
-      "require": "./.medusa/server/src/admin/index.js",
-      "default": "./.medusa/server/src/admin/index.js"
-    },
-    "./package.json": "./package.json",
-    "./workflows": "./.medusa/server/src/workflows/index.js",
-    "./.medusa/server/src/modules/*": "./.medusa/server/src/modules/*/index.js",
-    "./modules/*": "./.medusa/server/src/modules/*/index.js",
-    "./providers/*": "./.medusa/server/src/providers/*/index.js",
-    "./*": "./.medusa/server/src/*.js"
-  },
   "keywords": [
     "medusa",
-    "plugin",
-    "medusa-plugin-shipping",
     "medusa-plugin",
-    "medusa-v2",
-    "medusa-plugin-integration",
-    "fedex"
+    "medusa-fulfillment",
+    "dhl",
+    "dhl-ecommerce",
+    "shipping"
   ],
-  "scripts": {
-    "build": "medusa plugin:build",
-    "dev": "medusa plugin:develop",
-    "prepublishOnly": "medusa plugin:build",
-    "lint": "npx eslint src",
-    "lint:fix": "npx eslint src --fix"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.36.0",
-    "@medusajs/admin-sdk": "^2.5.0",
-    "@medusajs/cli": "^2.5.0",
-    "@medusajs/framework": "^2.5.0",
-    "@medusajs/icons": "^2.5.0",
-    "@medusajs/medusa": "^2.5.0",
-    "@medusajs/test-utils": "^2.5.0",
-    "@medusajs/ui": "^4.0.4",
-    "@mikro-orm/cli": "^6.4.3",
-    "@mikro-orm/core": "^6.4.3",
-    "@mikro-orm/knex": "^6.4.3",
-    "@mikro-orm/migrations": "^6.4.3",
-    "@mikro-orm/postgresql": "^6.4.3",
-    "@swc/core": "^1.5.7",
-    "@types/node": "^20.0.0",
-    "@types/react": "^18.3.2",
-    "@types/react-dom": "^18.2.25",
-    "awilix": "^8.0.1",
-    "eslint": "^9.36.0",
-    "pg": "^8.13.0",
-    "prop-types": "^15.8.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.6.2",
-    "typescript-eslint": "^8.44.0",
-    "vite": "^5.2.11",
-    "yalc": "^1.0.0-pre.53"
+  "repository": {
+    "type": "git",
+    "url": ""
   },
   "peerDependencies": {
-    "@medusajs/admin-sdk": "^2.5.0",
-    "@medusajs/cli": "^2.5.0",
-    "@medusajs/framework": "^2.5.0",
-    "@medusajs/icons": "^2.5.0",
-    "@medusajs/medusa": "^2.5.0",
-    "@medusajs/test-utils": "^2.5.0",
-    "@medusajs/ui": "^4.0.3",
-    "@mikro-orm/cli": "^6.4.3",
-    "@mikro-orm/core": "^6.4.3",
-    "@mikro-orm/knex": "^6.4.3",
-    "@mikro-orm/migrations": "^6.4.3",
-    "@mikro-orm/postgresql": "6.4.3",
-    "awilix": "^8.0.1",
-    "pg": "^8.13.0"
+    "@medusajs/framework": "^2.0.0"
   },
-  "engines": {
-    "node": ">=20"
-  },
-  "packageManager": "yarn@4.4.0+sha512.91d93b445d9284e7ed52931369bc89a663414e5582d00eea45c67ddc459a2582919eece27c412d6ffd1bd0793ff35399381cb229326b961798ce4f4cc60ddfdb"
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
 }

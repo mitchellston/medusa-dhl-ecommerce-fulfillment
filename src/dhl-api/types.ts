@@ -44,31 +44,46 @@ export type DHLPiece = {
 }
 
 export type DHLCreateLabelRequest = {
+  labelId: string // Required: UUID for the label
+  labelFormat?: 'pdf' | 'png' | 'zpl' // Label format, defaults to pdf
   shipmentId?: string
   orderReference?: string
+  parcelTypeKey: string // Required: Parcel type at root level (e.g., 'SMALL', 'MEDIUM', 'LARGE')
   receiver: DHLAddress
   shipper: DHLAddress
   accountId: string
-  options?: DHLShipmentOption[]
+  options: DHLShipmentOption[] // Required: Array of options (can be empty)
   returnLabel?: boolean
-  pieces: DHLPiece[]
+  pieceNumber?: number
+  quantity?: number
+  weight?: number
+  pieces?: DHLPiece[] // Optional: Only needed for multi-piece shipments
   product?: string
   application?: string
 }
 
-export type DHLLabelPiece = {
-  labelId: string
-  trackerCode: string
-  parcelType: string
-  pieceNumber: number
-  labelType: string
-  pdf?: string
-  routingCode?: string
-}
-
 export type DHLCreateLabelResponse = {
-  shipmentId: string
-  pieces: DHLLabelPiece[]
+  labelId: string
+  orderReference?: string
+  parcelType: string
+  labelType: string
+  pieceNumber: number
+  weight?: number
+  trackerCode: string
+  routingCode?: string
+  userId?: string
+  organisationId?: string
+  application?: string
+  airWaybillNumber?: string
+  timeCreated?: string
+  shipmentId?: { id: string }
+  accountNumber?: string
+  dimensions?: {
+    length: number
+    width: number
+    height: number
+  }
+  pdf?: string // Added when requesting PDF format
 }
 
 export type DHLCapability = {

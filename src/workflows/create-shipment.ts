@@ -18,7 +18,7 @@ import {
 import { Modules } from '@medusajs/framework/utils'
 import { DHLClient } from '../dhl-api/client'
 import { createFulfillment, CreateFulfillmentInput } from '../dhl-api/create-fulfillment'
-import { DHLCreateLabelResponse, DHLLabelPiece } from '../dhl-api/types'
+import { DHLCreateLabelResponse } from '../dhl-api/types'
 
 type WorkflowInput = {
   userId: string
@@ -221,29 +221,35 @@ const createDhlShipment = createStep(
 
 /**
  * Step to transform DHL response into CreateFulfillmentResult format.
+ * DHL API returns a single label object, not an array of pieces.
  */
 const transformDhlResponse = createStep(
   'transform-dhl-response',
-  async (input: { shipment: DHLCreateLabelResponse }): Promise<StepResponse<{ shipment: CreateFulfillmentResult }>> => {
+  async (input: {
+    shipment: DHLCreateLabelResponse
+  }): Promise<StepResponse<{ shipment: CreateFulfillmentResult }>> => {
     const { shipment } = input
 
-    // Get the first piece for tracking info (DHL returns per-piece tracking)
-    const firstPiece = shipment.pieces[0]
+    // DHL returns a single label object
+    const shipmentId =
+      typeof shipment.shipmentId === 'object' ? shipment.shipmentId.id : shipment.shipmentId
 
     const fulfillmentResponse: CreateFulfillmentResult = {
-      labels: shipment.pieces.map((piece: DHLLabelPiece) => ({
-        tracking_number: piece.trackerCode,
-        tracking_url: `${DHL_TRACKING_BASE_URL}?tc=${piece.trackerCode}`,
-        label_url: piece.labelId, // Label ID can be used to fetch PDF via getLabelPdf
-      })),
+      labels: [
+        {
+          tracking_number: shipment.trackerCode,
+          tracking_url: `${DHL_TRACKING_BASE_URL}?tc=${shipment.trackerCode}`,
+          label_url: shipment.labelId, // Label ID can be used to fetch PDF via getLabelPdf
+        },
+      ],
       data: {
-        shipment_id: shipment.shipmentId,
-        tracking_number: firstPiece?.trackerCode,
-        tracking_url: firstPiece
-          ? `${DHL_TRACKING_BASE_URL}?tc=${firstPiece.trackerCode}`
-          : undefined,
-        label_id: firstPiece?.labelId,
-        pieces: shipment.pieces,
+        shipment_id: shipmentId,
+        tracking_number: shipment.trackerCode,
+        tracking_url: `${DHL_TRACKING_BASE_URL}?tc=${shipment.trackerCode}`,
+        label_id: shipment.labelId,
+        parcel_type: shipment.parcelType,
+        piece_number: shipment.pieceNumber,
+        routing_code: shipment.routingCode,
       },
     }
 

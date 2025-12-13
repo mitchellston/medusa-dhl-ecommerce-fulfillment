@@ -11,11 +11,14 @@ import {
 } from '@medusajs/framework/types'
 import { DHLClient } from '../../dhl-api/client'
 import {
-  getFulfillmentOptions,
+  getAllFulfillmentOptions,
+  getParcelTypesForProduct,
+  selectOptimalParcelType,
   FulfillmentOption as DHLFulfillmentOption,
 } from '../../dhl-api/get-fulfillment-options'
 import { createFulfillment, CreateFulfillmentInput } from '../../dhl-api/create-fulfillment'
 import getDhlCredentialsWorkflow from '../../workflows/get-credentials'
+import getStockLocationWorkflow from '../../workflows/get-stock-location'
 import { SetupCredentialsInput } from '../../api/admin/dhl/route'
 
 type InjectedDependencies = {
@@ -99,17 +102,16 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
 
   /**
    * Get fulfillment options from the DHL API.
-   * This returns available shipping products and parcel types.
+   * This returns available shipping products and parcel types for all supported countries.
    * @returns {Promise<FulfillmentOption[]>}
    */
   async getFulfillmentOptions(): Promise<FulfillmentOption[]> {
     try {
       const client = await this.createClient()
-      // Default to NL -> NL for capabilities, can be customized per use case
-      const dhlOptions: DHLFulfillmentOption[] = await getFulfillmentOptions(
+      // Fetch capabilities for all supported destination countries
+      const dhlOptions: DHLFulfillmentOption[] = await getAllFulfillmentOptions(
         client,
-        'NL',
-        'NL',
+        'NL', // fromCountry - origin is Netherlands
         true, // toBusiness
       )
 
@@ -123,6 +125,7 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
         parcel_type: option.parcel_type,
         min_weight_kg: option.min_weight_kg,
         max_weight_kg: option.max_weight_kg,
+        supported_countries: option.supported_countries,
       }))
     } catch (error) {
       this.logger_.error('Error getting DHL fulfillment options:', error)
@@ -192,6 +195,7 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
 
   /**
    * Create a fulfillment for a given order - generates DHL shipping label.
+   * Automatically selects the optimal parcel type based on total order weight.
    * @param data - The fulfillment data.
    * @param items - The line items to fulfill.
    * @param order - The order to fulfill.
@@ -216,14 +220,43 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
 
       const client = await this.createClient()
 
-      // Build shipper address from data (should be passed from stock location or configuration)
-      // Note: fulfillment.delivery_address is the RECIPIENT address, NOT the shipper address
-      const shipperAddress = data.shipper_address as CreateFulfillmentInput['shipper'] | undefined
+      // Fetch the stock location to get the shipper address using workflow
+      const { result: stockLocation, errors } = await getStockLocationWorkflow().run({
+        input: { locationId },
+      })
 
-      if (!shipperAddress) {
+      if (errors && errors.length > 0) {
+        this.logger_.error('Error fetching stock location: ' + JSON.stringify(errors, null, 2))
+        throw new Error('DHL create fulfillment failed: Error fetching stock location')
+      }
+
+      if (!stockLocation) {
+        throw new Error('DHL create fulfillment failed: Stock location not found')
+      }
+
+      if (!stockLocation.address) {
+        throw new Error('DHL create fulfillment failed: Stock location address not configured')
+      }
+
+      // Use shipper_address from data if provided (backward compatibility), otherwise use stock location
+      const shipperAddressData = data.shipper_address as Record<string, unknown> | undefined
+      const shipperAddress = {
+        first_name: shipperAddressData?.first_name ?? stockLocation.name ?? 'Shipper',
+        last_name: shipperAddressData?.last_name ?? '',
+        company: shipperAddressData?.company ?? stockLocation.name,
+        address_1: shipperAddressData?.address_1 ?? stockLocation.address.address_1,
+        address_2: shipperAddressData?.address_2 ?? stockLocation.address.address_2,
+        postal_code: shipperAddressData?.postal_code ?? stockLocation.address.postal_code,
+        city: shipperAddressData?.city ?? stockLocation.address.city,
+        country_code: shipperAddressData?.country_code ?? stockLocation.address.country_code,
+        email: shipperAddressData?.email,
+        phone: shipperAddressData?.phone ?? stockLocation.address.phone,
+      }
+
+      if (!shipperAddress.postal_code || !shipperAddress.country_code) {
         throw new Error(
           'DHL create fulfillment failed: Missing shipper address. ' +
-            'Please provide shipper_address in the fulfillment data from your stock location configuration.',
+            'Please configure the address on your stock location.',
         )
       }
 
@@ -234,26 +267,78 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
         throw new Error('DHL create fulfillment failed: Missing receiver address')
       }
 
-      // Build pieces from items
-      const pieces = items.map(() => ({
-        parcelType: (data.parcel_type as string) || 'SMALL',
-        quantity: 1,
-        weight: data.weight as number | undefined,
-      }))
+      // Calculate total weight from items (weight should be in grams, convert to kg)
+      type ItemWithLineItem = {
+        line_item?: {
+          variant?: { weight?: number }
+          product?: { weight?: number }
+        }
+        quantity?: number
+      }
+      const totalWeightGrams = items.reduce((sum, item) => {
+        const lineItem = (item as ItemWithLineItem).line_item
+        const weight = lineItem?.variant?.weight ?? lineItem?.product?.weight ?? 0
+        const quantity = item.quantity ?? 1
+        return sum + weight * quantity
+      }, 0)
+      const totalWeightKg = totalWeightGrams / 1000
+
+      // Get the product key from the shipping option data
+      const productKey = data.product_key as string | undefined
+
+      // Determine the optimal parcel type based on weight
+      let parcelType = data.parcel_type as string | undefined
+
+      if (productKey && totalWeightKg > 0) {
+        // Fetch available parcel types for this product
+        const fulfillmentOptions = await getAllFulfillmentOptions(client, 'NL', true, [
+          shippingAddress.country_code?.toUpperCase() || 'NL',
+        ])
+        const parcelTypes = getParcelTypesForProduct(fulfillmentOptions, productKey)
+
+        if (parcelTypes.length > 0) {
+          const optimalParcelType = selectOptimalParcelType(parcelTypes, totalWeightKg)
+          if (optimalParcelType) {
+            parcelType = optimalParcelType
+            if (credentials.enable_logs) {
+              this.logger_.info(
+                `DHL: Selected parcel type '${parcelType}' for weight ${totalWeightKg}kg`,
+              )
+            }
+          }
+        }
+      }
+
+      // Fallback to SMALL if no parcel type determined
+      if (!parcelType) {
+        parcelType = 'SMALL'
+        if (credentials.enable_logs) {
+          this.logger_.info(`DHL: Using default parcel type 'SMALL'`)
+        }
+      }
+
+      // Build pieces - using a single piece with total weight and optimal parcel type
+      const pieces = [
+        {
+          parcelType,
+          quantity: 1,
+          weight: totalWeightKg > 0 ? totalWeightKg : (data.weight as number | undefined),
+        },
+      ]
 
       const fulfillmentInput: CreateFulfillmentInput = {
         orderReference: order?.id,
         shipper: {
-          firstName: (shipperAddress as any).first_name || 'Shipper',
-          lastName: (shipperAddress as any).last_name || '',
-          companyName: (shipperAddress as any).company,
-          street: (shipperAddress as any).address_1 || '',
-          number: (shipperAddress as any).address_2,
-          postalCode: (shipperAddress as any).postal_code || '',
-          city: (shipperAddress as any).city || '',
-          countryCode: (shipperAddress as any).country_code || 'NL',
-          email: (shipperAddress as any).email,
-          phoneNumber: (shipperAddress as any).phone,
+          firstName: String(shipperAddress.first_name || 'Shipper'),
+          lastName: String(shipperAddress.last_name || ''),
+          companyName: shipperAddress.company ? String(shipperAddress.company) : undefined,
+          street: String(shipperAddress.address_1 || ''),
+          number: shipperAddress.address_2 ? String(shipperAddress.address_2) : undefined,
+          postalCode: String(shipperAddress.postal_code || ''),
+          city: String(shipperAddress.city || ''),
+          countryCode: String(shipperAddress.country_code || 'NL').toUpperCase(),
+          email: shipperAddress.email ? String(shipperAddress.email) : undefined,
+          phoneNumber: shipperAddress.phone ? String(shipperAddress.phone) : undefined,
         },
         receiver: {
           firstName: shippingAddress.first_name || '',
@@ -264,7 +349,7 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
           postalCode: shippingAddress.postal_code || '',
           city: shippingAddress.city || '',
           countryCode: shippingAddress.country_code || 'NL',
-          email: (order as any)?.email,
+          email: (order as { email?: string })?.email,
           phoneNumber: shippingAddress.phone || undefined,
         },
         pieces,
@@ -284,19 +369,42 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
         this.logger_.info('DHL create fulfillment response: ' + JSON.stringify(response, null, 2))
       }
 
+      // Fetch the label PDF using the labelId
+      let labelPdfBase64 = response.pdf
+      if (!labelPdfBase64 && response.labelId) {
+        try {
+          if (credentials.enable_logs) {
+            this.logger_.info(`DHL: Fetching PDF for label ${response.labelId}`)
+          }
+          labelPdfBase64 = await client.getLabelPdf(response.labelId)
+        } catch (pdfError) {
+          this.logger_.warn(
+            `DHL: Failed to fetch label PDF: ${pdfError instanceof Error ? pdfError.message : String(pdfError)}`,
+          )
+        }
+      }
+
       // Return the fulfillment data with tracking info
+      // DHL API returns a flat object for single labels
       return {
         data: {
-          shipment_id: response.shipmentId,
-          pieces: response.pieces,
-          tracker_codes: response.pieces.map((p) => p.trackerCode),
-          label_ids: response.pieces.map((p) => p.labelId),
+          shipment_id:
+            typeof response.shipmentId === 'object'
+              ? response.shipmentId.id
+              : String(response.shipmentId),
+          label_id: response.labelId,
+          tracker_code: response.trackerCode,
+          parcel_type: response.parcelType,
+          piece_number: response.pieceNumber,
+          routing_code: response.routingCode,
         },
-        labels: response.pieces.map((piece) => ({
-          tracking_number: piece.trackerCode,
-          tracking_url: `https://www.dhlparcel.nl/nl/volg-uw-zending-0?tt=${piece.trackerCode}`,
-          label_url: piece.pdf ? `data:application/pdf;base64,${piece.pdf}` : '',
-        })),
+        labels: [
+          {
+            tracking_number: response.trackerCode,
+            tracking_url: `https://www.dhlparcel.nl/nl/volg-uw-zending-0?tt=${response.trackerCode}`,
+            label_url: labelPdfBase64 ? `data:application/pdf;base64,${labelPdfBase64}` : '',
+          },
+        ],
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)

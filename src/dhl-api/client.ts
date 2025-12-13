@@ -118,12 +118,18 @@ export class DHLClient {
   async createLabel(
     data: Omit<DHLCreateLabelRequest, 'accountId'>,
   ): Promise<DHLCreateLabelResponse> {
+    const requestBody = {
+      ...data,
+      accountId: this.accountId,
+    }
+
+    if (this.enableLogs) {
+      console.log('[DHL API] Create Label Request Body:', JSON.stringify(requestBody, null, 2))
+    }
+
     return this.sendRequest<DHLCreateLabelResponse>('/labels', {
       method: 'POST',
-      body: JSON.stringify({
-        ...data,
-        accountId: this.accountId,
-      }),
+      body: JSON.stringify(requestBody),
     })
   }
 

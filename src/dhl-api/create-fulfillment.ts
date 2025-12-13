@@ -1,10 +1,10 @@
 import { MedusaError } from '@medusajs/framework/utils'
+import { randomUUID } from 'crypto'
 import { DHLClient } from './client'
 import {
   DHLAddress,
   DHLCreateLabelRequest,
   DHLCreateLabelResponse,
-  DHLPiece,
   DHLShipmentOption,
 } from './types'
 
@@ -79,18 +79,6 @@ function toDHLAddress(address: CreateFulfillmentInput['shipper']): DHLAddress {
 }
 
 /**
- * Convert pieces to DHL format
- */
-function toDHLPieces(pieces: CreateFulfillmentInput['pieces']): DHLPiece[] {
-  return pieces.map((piece) => ({
-    parcelType: piece.parcelType || 'SMALL', // Default parcel type
-    quantity: piece.quantity,
-    weight: piece.weight,
-    dimensions: piece.dimensions,
-  }))
-}
-
-/**
  * Create a DHL eCommerce fulfillment (shipping label)
  *
  * API Endpoint: POST https://api-gw.dhlparcel.nl/labels
@@ -126,15 +114,23 @@ export async function createFulfillment(
     )
   }
 
-  // Build the label request
+  // Get the first piece to extract parcel type and weight
+  const firstPiece = input.pieces[0]
+  const parcelTypeKey = firstPiece.parcelType || 'SMALL'
+
+  // Build the label request with all required root-level fields
   const labelRequest: Omit<DHLCreateLabelRequest, 'accountId'> = {
+    labelId: randomUUID(), // Required: Generate a unique label ID
+    labelFormat: 'pdf',
     orderReference: input.orderReference,
+    parcelTypeKey, // Required: Parcel type at root level
     receiver: toDHLAddress(input.receiver),
     shipper: toDHLAddress(input.shipper),
-    pieces: toDHLPieces(input.pieces),
-    options: input.options as DHLShipmentOption[],
-    product: input.product,
+    options: (input.options as DHLShipmentOption[]) || [], // Required: Must be an array
     returnLabel: input.returnLabel,
+    quantity: firstPiece.quantity,
+    weight: firstPiece.weight,
+    product: input.product,
   }
 
   // Create the label via DHL API

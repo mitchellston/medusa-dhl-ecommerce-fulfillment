@@ -1,6 +1,31 @@
 import { DHLClient } from './client'
 import { DHLCapabilitiesResponse, DHLCapability } from './types'
 
+/**
+ * Countries supported by DHL Parcel NL for shipping
+ * Includes Netherlands and major EU destinations
+ */
+export const DHL_SUPPORTED_COUNTRIES = [
+  'NL', // Netherlands (domestic)
+  'BE', // Belgium
+  'DE', // Germany
+  'FR', // France
+  'LU', // Luxembourg
+  'AT', // Austria
+  'ES', // Spain
+  'IT', // Italy
+  'PT', // Portugal
+  'PL', // Poland
+  'CZ', // Czech Republic
+  'DK', // Denmark
+  'SE', // Sweden
+  'FI', // Finland
+  'IE', // Ireland
+  'GB', // United Kingdom
+] as const
+
+export type SupportedCountry = (typeof DHL_SUPPORTED_COUNTRIES)[number]
+
 export type FulfillmentOption = {
   id: string
   name: string
@@ -9,6 +34,7 @@ export type FulfillmentOption = {
   parcel_type: string
   min_weight_kg: number
   max_weight_kg: number
+  supported_countries: string[]
   options: {
     key: string
     description: string
@@ -17,7 +43,16 @@ export type FulfillmentOption = {
 }
 
 /**
- * Get available fulfillment options from DHL eCommerce
+ * Parcel type weight ranges for automatic selection
+ */
+export type ParcelTypeConfig = {
+  key: string
+  min_weight_kg: number
+  max_weight_kg: number
+}
+
+/**
+ * Get available fulfillment options from DHL eCommerce for a single route
  *
  * API Endpoint: GET https://api-gw.dhlparcel.nl/capabilities/business
  * Documentation: https://api-gw.dhlparcel.nl/docs/#/Capabilities
@@ -35,7 +70,112 @@ export async function getFulfillmentOptions(
 ): Promise<FulfillmentOption[]> {
   const capabilities = await client.getCapabilities(fromCountry, toCountry, toBusiness)
 
-  return mapCapabilitiesToFulfillmentOptions(capabilities)
+  return mapCapabilitiesToFulfillmentOptions(capabilities, [toCountry])
+}
+
+/**
+ * Get available fulfillment options for all supported destination countries
+ * Deduplicates options that are available across multiple countries
+ *
+ * @param client - DHL API client instance
+ * @param fromCountry - Origin country code (e.g., "NL")
+ * @param toBusiness - Whether the receiver is a business (default: true)
+ * @param toCountries - Optional array of specific countries to fetch (defaults to all supported)
+ */
+export async function getAllFulfillmentOptions(
+  client: DHLClient,
+  fromCountry: string,
+  toBusiness = true,
+  toCountries: string[] = [...DHL_SUPPORTED_COUNTRIES],
+): Promise<FulfillmentOption[]> {
+  // Fetch capabilities for all destination countries in parallel
+  const capabilitiesPromises = toCountries.map(async (toCountry) => {
+    try {
+      const capabilities = await client.getCapabilities(fromCountry, toCountry, toBusiness)
+      return { toCountry, capabilities }
+    } catch {
+      // If a country fails, continue with others
+      return { toCountry, capabilities: [] as DHLCapabilitiesResponse }
+    }
+  })
+
+  const results = await Promise.all(capabilitiesPromises)
+
+  // Map to track unique options and their supported countries
+  const optionsMap = new Map<string, FulfillmentOption>()
+
+  for (const { toCountry, capabilities } of results) {
+    for (const capability of capabilities) {
+      const id = `${capability.product.key}__${capability.parcelType.key}`
+
+      if (optionsMap.has(id)) {
+        // Add country to existing option's supported countries
+        const existing = optionsMap.get(id)!
+        if (!existing.supported_countries.includes(toCountry)) {
+          existing.supported_countries.push(toCountry)
+        }
+      } else {
+        // Create new option
+        optionsMap.set(id, {
+          id,
+          name: `${capability.product.label} (${capability.parcelType.key})`,
+          product_key: capability.product.key,
+          product_code: capability.product.code,
+          parcel_type: capability.parcelType.key,
+          min_weight_kg: capability.parcelType.minWeightKg,
+          max_weight_kg: capability.parcelType.maxWeightKg,
+          supported_countries: [toCountry],
+          options: capability.options.map((opt) => ({
+            key: opt.key,
+            description: opt.description,
+            input_type: opt.inputType,
+          })),
+        })
+      }
+    }
+  }
+
+  return Array.from(optionsMap.values())
+}
+
+/**
+ * Select the optimal parcel type based on total weight
+ *
+ * @param parcelTypes - Available parcel type configurations
+ * @param weightKg - Total weight in kilograms
+ * @returns The optimal parcel type key, or undefined if no suitable type found
+ */
+export function selectOptimalParcelType(
+  parcelTypes: ParcelTypeConfig[],
+  weightKg: number,
+): string | undefined {
+  // Sort by max weight ascending to find the smallest suitable parcel
+  const sorted = [...parcelTypes].sort((a, b) => a.max_weight_kg - b.max_weight_kg)
+
+  // Find the first parcel type that can handle the weight
+  const suitable = sorted.find((pt) => weightKg >= pt.min_weight_kg && weightKg <= pt.max_weight_kg)
+
+  return suitable?.key
+}
+
+/**
+ * Get parcel type configurations for a specific product from fulfillment options
+ *
+ * @param options - Available fulfillment options
+ * @param productKey - The product key to filter by
+ * @returns Array of parcel type configurations for the product
+ */
+export function getParcelTypesForProduct(
+  options: FulfillmentOption[],
+  productKey: string,
+): ParcelTypeConfig[] {
+  return options
+    .filter((opt) => opt.product_key === productKey)
+    .map((opt) => ({
+      key: opt.parcel_type,
+      min_weight_kg: opt.min_weight_kg,
+      max_weight_kg: opt.max_weight_kg,
+    }))
 }
 
 /**
@@ -43,15 +183,17 @@ export async function getFulfillmentOptions(
  */
 function mapCapabilitiesToFulfillmentOptions(
   capabilities: DHLCapabilitiesResponse,
+  supportedCountries: string[] = [],
 ): FulfillmentOption[] {
   return capabilities.map((capability: DHLCapability) => ({
     id: `${capability.product.key}__${capability.parcelType.key}`,
-    name: capability.product.label,
+    name: `${capability.product.label} (${capability.parcelType.key})`,
     product_key: capability.product.key,
     product_code: capability.product.code,
     parcel_type: capability.parcelType.key,
     min_weight_kg: capability.parcelType.minWeightKg,
     max_weight_kg: capability.parcelType.maxWeightKg,
+    supported_countries: supportedCountries,
     options: capability.options.map((opt) => ({
       key: opt.key,
       description: opt.description,

@@ -82,6 +82,7 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
       userId: credentials.user_id,
       key: credentials.api_key,
       accountId: credentials.account_id,
+      enableLogs: credentials.enable_logs,
     })
   }
 
@@ -109,7 +110,7 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
         client,
         'NL',
         'NL',
-        'business',
+        true, // toBusiness
       )
 
       return dhlOptions.map((option) => ({
@@ -161,9 +162,9 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
     // DHL eCommerce doesn't have a public rate API
     // Return the price set in the shipping option configuration
     // Or implement custom pricing logic based on weight/destination
-    const configuredPrice = optionData.price || data.price
+    const configuredPrice = optionData.price ?? data.price
 
-    if (configuredPrice !== undefined) {
+    if (typeof configuredPrice === 'number') {
       return {
         calculated_amount: configuredPrice,
         is_calculated_price_tax_inclusive: true,
@@ -273,15 +274,14 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
 
       if (credentials.enable_logs) {
         this.logger_.info(
-          'DHL create fulfillment input:',
-          JSON.stringify(fulfillmentInput, null, 2),
+          'DHL create fulfillment input: ' + JSON.stringify(fulfillmentInput, null, 2),
         )
       }
 
       const response = await createFulfillment(client, fulfillmentInput)
 
       if (credentials.enable_logs) {
-        this.logger_.info('DHL create fulfillment response:', JSON.stringify(response, null, 2))
+        this.logger_.info('DHL create fulfillment response: ' + JSON.stringify(response, null, 2))
       }
 
       // Return the fulfillment data with tracking info
@@ -295,7 +295,7 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
         labels: response.pieces.map((piece) => ({
           tracking_number: piece.trackerCode,
           tracking_url: `https://www.dhlparcel.nl/nl/volg-uw-zending-0?tt=${piece.trackerCode}`,
-          label_url: piece.pdf ? `data:application/pdf;base64,${piece.pdf}` : undefined,
+          label_url: piece.pdf ? `data:application/pdf;base64,${piece.pdf}` : '',
         })),
       }
     } catch (error) {

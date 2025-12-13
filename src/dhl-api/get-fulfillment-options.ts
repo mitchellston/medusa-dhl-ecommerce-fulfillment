@@ -19,21 +19,21 @@ export type FulfillmentOption = {
 /**
  * Get available fulfillment options from DHL eCommerce
  *
- * API Endpoint: GET https://api-gw.dhlparcel.nl/capabilities/{senderType}/{fromCountry}/{toCountry}
+ * API Endpoint: GET https://api-gw.dhlparcel.nl/capabilities/business
  * Documentation: https://api-gw.dhlparcel.nl/docs/#/Capabilities
  *
  * @param client - DHL API client instance
  * @param fromCountry - Origin country code (e.g., "NL")
  * @param toCountry - Destination country code (e.g., "NL", "DE", "BE")
- * @param senderType - "business" or "consumer" (default: "business")
+ * @param toBusiness - Whether the receiver is a business (default: true)
  */
 export async function getFulfillmentOptions(
   client: DHLClient,
   fromCountry: string,
   toCountry: string,
-  senderType: 'business' | 'consumer' = 'business',
+  toBusiness = true,
 ): Promise<FulfillmentOption[]> {
-  const capabilities = await client.getCapabilities(senderType, fromCountry, toCountry)
+  const capabilities = await client.getCapabilities(fromCountry, toCountry, toBusiness)
 
   return mapCapabilitiesToFulfillmentOptions(capabilities)
 }

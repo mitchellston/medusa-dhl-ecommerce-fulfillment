@@ -220,12 +220,12 @@ const createDhlShipment = createStep(
 )
 
 /**
- * Workflow to create a DHL eCommerce shipment and generate a shipping label.
+ * Step to transform DHL response into CreateFulfillmentResult format.
  */
-const createShipmentWorkflow = createWorkflow(
-  'create-dhl-shipment-and-label',
-  (input: WorkflowInput): WorkflowResponse<{ shipment: CreateFulfillmentResult }> => {
-    const { shipment } = createDhlShipment(input)
+const transformDhlResponse = createStep(
+  'transform-dhl-response',
+  async (input: { shipment: DHLCreateLabelResponse }): Promise<StepResponse<{ shipment: CreateFulfillmentResult }>> => {
+    const { shipment } = input
 
     // Get the first piece for tracking info (DHL returns per-piece tracking)
     const firstPiece = shipment.pieces[0]
@@ -247,8 +247,21 @@ const createShipmentWorkflow = createWorkflow(
       },
     }
 
+    return new StepResponse({ shipment: fulfillmentResponse })
+  },
+)
+
+/**
+ * Workflow to create a DHL eCommerce shipment and generate a shipping label.
+ */
+const createShipmentWorkflow = createWorkflow(
+  'create-dhl-shipment-and-label',
+  (input: WorkflowInput): WorkflowResponse<{ shipment: CreateFulfillmentResult }> => {
+    const { shipment } = createDhlShipment(input)
+    const result = transformDhlResponse({ shipment })
+
     return new WorkflowResponse({
-      shipment: fulfillmentResponse,
+      shipment: result.shipment,
     })
   },
 )

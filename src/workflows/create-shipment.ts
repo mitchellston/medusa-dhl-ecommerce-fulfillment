@@ -3,7 +3,7 @@ import {
   createWorkflow,
   StepResponse,
   WorkflowResponse,
-} from "@medusajs/framework/workflows-sdk";
+} from '@medusajs/framework/workflows-sdk'
 import {
   StockLocationDTO,
   IStockLocationService,
@@ -14,285 +14,243 @@ import {
   CreateFulfillmentResult,
   IFulfillmentModuleService,
   ShippingOptionDTO,
-  ISalesChannelModuleService,
-  SalesChannelDTO,
-} from "@medusajs/framework/types";
-import { Modules } from "@medusajs/framework/utils";
-import {
-  FedexAddress,
-  FedexContact,
-  FedexRateRequestItem,
-  FedexShipmentResponse,
-} from "../fedex-api/types";
-import { createFulfillment } from "../fedex-api/create-fulfillment";
+} from '@medusajs/framework/types'
+import { Modules } from '@medusajs/framework/utils'
+import { DHLClient } from '../dhl-api/client'
+import { createFulfillment, CreateFulfillmentInput } from '../dhl-api/create-fulfillment'
+import { DHLCreateLabelResponse, DHLLabelPiece } from '../dhl-api/types'
 
 type WorkflowInput = {
-  token: string;
-  baseUrl: string;
-  accountNumber: string;
-  locationId: string;
-  data: Record<string, unknown>;
-  items: Partial<Omit<FulfillmentItemDTO, "fulfillment">>[];
-  order: Partial<FulfillmentOrderDTO> | undefined;
-  fulfillment: Partial<Omit<FulfillmentDTO, "provider_id" | "data" | "items">>;
-  weightUnitOfMeasure: "LB" | "KG";
-  debug?: boolean;
-};
+  userId: string
+  apiKey: string
+  accountId: string
+  locationId: string
+  data: Record<string, unknown>
+  items: Partial<Omit<FulfillmentItemDTO, 'fulfillment'>>[]
+  order: Partial<FulfillmentOrderDTO> | undefined
+  fulfillment: Partial<Omit<FulfillmentDTO, 'provider_id' | 'data' | 'items'>>
+  debug?: boolean
+}
+
+const DHL_TRACKING_BASE_URL = 'https://www.dhlparcel.nl/nl/particulier/ontvangen/volg-je-pakket'
 
 /**
- * Converts a US state name to its two-letter code.
- * Returns the original input if not found.
+ * Parse address components from a full address line
+ * DHL requires street, number, and addition separately
  */
-function stateNameToCode(stateName: string): string {
-  if (!stateName) return stateName;
-  const states: Record<string, string> = {
-    alabama: "AL",
-    alaska: "AK",
-    arizona: "AZ",
-    arkansas: "AR",
-    california: "CA",
-    colorado: "CO",
-    connecticut: "CT",
-    delaware: "DE",
-    florida: "FL",
-    georgia: "GA",
-    hawaii: "HI",
-    idaho: "ID",
-    illinois: "IL",
-    indiana: "IN",
-    iowa: "IA",
-    kansas: "KS",
-    kentucky: "KY",
-    louisiana: "LA",
-    maine: "ME",
-    maryland: "MD",
-    massachusetts: "MA",
-    michigan: "MI",
-    minnesota: "MN",
-    mississippi: "MS",
-    missouri: "MO",
-    montana: "MT",
-    nebraska: "NE",
-    nevada: "NV",
-    "new hampshire": "NH",
-    "new jersey": "NJ",
-    "new mexico": "NM",
-    "new york": "NY",
-    "north carolina": "NC",
-    "north dakota": "ND",
-    ohio: "OH",
-    oklahoma: "OK",
-    oregon: "OR",
-    pennsylvania: "PA",
-    "rhode island": "RI",
-    "south carolina": "SC",
-    "south dakota": "SD",
-    tennessee: "TN",
-    texas: "TX",
-    utah: "UT",
-    vermont: "VT",
-    virginia: "VA",
-    washington: "WA",
-    "west virginia": "WV",
-    wisconsin: "WI",
-    wyoming: "WY",
-    "district of columbia": "DC",
-  };
-  return states[stateName.trim().toLowerCase()] || stateName;
+function parseAddressLine(addressLine: string): {
+  street: string
+  number?: string
+  addition?: string
+} {
+  if (!addressLine) return { street: '' }
+
+  // Try to extract street number and addition from the address
+  // Match pattern: street name, followed by number, optionally followed by addition
+  const match = addressLine.match(/^(.+?)\s+(\d+[\w]*)\s*(.*)$/)
+
+  if (match) {
+    return {
+      street: match[1].trim(),
+      number: match[2].trim(),
+      addition: match[3]?.trim() || undefined,
+    }
+  }
+
+  // If no number found, return the whole address as street
+  return { street: addressLine }
 }
 
 /**
- * Step to create a FedEx shipment.
+ * Step to create a DHL eCommerce shipment.
  */
-const createFedexShipment = createStep(
-  "create-fedex-shipment",
+const createDhlShipment = createStep(
+  'create-dhl-shipment',
   async (
     input: WorkflowInput,
-    { container }
-  ): Promise<StepResponse<{ shipment: FedexShipmentResponse }>> => {
+    { container },
+  ): Promise<StepResponse<{ shipment: DHLCreateLabelResponse }>> => {
     if (input.debug) {
-      console.log("FedEx create fulfillment started");
+      console.log('DHL eCommerce create fulfillment started')
     }
 
-    const stockLocationService = container.resolve<IStockLocationService>(
-      Modules.STOCK_LOCATION
-    );
+    // Get stock location for shipper address
+    const stockLocationService = container.resolve<IStockLocationService>(Modules.STOCK_LOCATION)
     const locations = await stockLocationService.listStockLocations(
       { id: [input.locationId] },
       {
-        relations: ["address"],
-      }
-    );
+        relations: ['address'],
+      },
+    )
 
     if (locations.length === 0) {
-      throw new Error("Location not found");
+      throw new Error('Location not found')
     }
 
-    const location: StockLocationDTO = locations[0];
+    const location: StockLocationDTO = locations[0]
 
     if (input.debug) {
-      console.log(`Stock Location : ${JSON.stringify(location, null, 2)}`);
+      console.log(`Stock Location : ${JSON.stringify(location, null, 2)}`)
     }
 
     if (!location.address) {
-      throw new Error("Location address not found");
-    }
-
-    if (!location.address.province) {
-      throw new Error("Location address province not found");
+      throw new Error('Location address not found')
     }
 
     if (!location.address.postal_code) {
-      throw new Error("Location address postal code not found");
+      throw new Error('Location address postal code not found')
     }
 
     if (!location.address.country_code) {
-      throw new Error("Location address country code not found");
+      throw new Error('Location address country code not found')
     }
 
-    const orderItems: FedexRateRequestItem[] = input.items.map(
-      (item: FulfillmentItemDTO & { variant?: ProductVariantDTO }) => ({
-        groupPackageCount: 1,
-        weight: {
-          units: input.weightUnitOfMeasure,
-          value: item.variant?.weight ? item.variant.weight : 1,
-        },
-        dimensions: {
-          length: item.variant?.length ? item.variant.length : 1,
-          width: item.variant?.width ? item.variant.width : 1,
-          height: item.variant?.height ? item.variant.height : 1,
-          units: "IN",
-        },
-      })
-    );
-
-    if (input.debug) {
-      console.log(`Order Items : ${JSON.stringify(orderItems, null, 2)}`);
-    }
-
+    // Get recipient address from order
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const recipient = (input.order as any)?.shipping_address ||
+    const recipient =
+      (input.order as any)?.shipping_address ||
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (input.data as any)["to_address"] ||
-      {};
-
-    const destinationAddress: FedexAddress = {
-      streetLines: [recipient.address_1, recipient.address_2].filter(
-        (line): line is string => typeof line === "string" && !!line
-      ),
-      stateOrProvinceCode: stateNameToCode(recipient.province),
-      postalCode: recipient.postal_code,
-      countryCode: recipient.country_code,
-      city: recipient.city || "",
-    };
-
-    const originAddress: FedexAddress = {
-      streetLines: [location.address.address_1, location.address.address_2].filter(
-        (line): line is string => typeof line === "string" && !!line
-      ),
-      stateOrProvinceCode: stateNameToCode(location.address.province),
-      postalCode: location.address.postal_code,
-      countryCode: location.address.country_code,
-      city: location.address.city || "",
-    };
+      (input.data as any)['to_address'] ||
+      {}
 
     if (input.debug) {
-      console.log(`Origin Address : ${JSON.stringify(originAddress, null, 2)}`);
-      console.log(`Destination Address : ${JSON.stringify(destinationAddress, null, 2)}`);
+      console.log(`Recipient : ${JSON.stringify(recipient, null, 2)}`)
     }
 
-    const shippingMethodId = input.fulfillment.shipping_option_id;
+    // Parse shipper address
+    const shipperParsed = parseAddressLine(location.address.address_1 || '')
+
+    // Parse receiver address
+    const receiverParsed = parseAddressLine(recipient.address_1 || '')
+
+    // Get shipping option for product type
+    const shippingMethodId = input.fulfillment.shipping_option_id
 
     if (!shippingMethodId) {
-      throw new Error(
-        "FedEx create fulfillment failed: Missing shipping method id"
-      );
+      throw new Error('DHL create fulfillment failed: Missing shipping method id')
     }
 
-    const fulfillmentService = container.resolve<IFulfillmentModuleService>(
-      Modules.FULFILLMENT
-    );
+    const fulfillmentService = container.resolve<IFulfillmentModuleService>(Modules.FULFILLMENT)
 
-    const shippingOption: ShippingOptionDTO = await fulfillmentService.retrieveShippingOption(shippingMethodId);
-
-    if (!shippingOption || !shippingOption.data || !shippingOption.data.carrier_code) {
-      throw new Error("FedEx create fulfillment failed: Missing shipping option data");
-    }
-
-    const shippingMethodCode: string = shippingOption.data.carrier_code.toString();
+    const shippingOption: ShippingOptionDTO =
+      await fulfillmentService.retrieveShippingOption(shippingMethodId)
 
     if (input.debug) {
-      console.log(`Shipping Method Code: ${shippingMethodCode}`);
+      console.log(`Shipping Option: ${JSON.stringify(shippingOption, null, 2)}`)
     }
 
-    const customerContact: FedexContact = {
-      personName: recipient.first_name + " " + recipient.last_name,
-      phoneNumber: recipient.phone,
-    };
+    // Get the DHL product type from shipping option data (e.g., "DOOR", "BP", "PS")
+    const dhlProduct = shippingOption.data?.carrier_code?.toString() || 'DOOR'
 
-    // Get sales channel information
-    const salesChannelId = input.order?.sales_channel_id;
-    if (!salesChannelId) {
-      throw new Error("FedEx create fulfillment failed: Missing sales channel id");
+    // Build pieces from order items
+    const pieces: CreateFulfillmentInput['pieces'] = input.items.map(
+      (item: FulfillmentItemDTO & { variant?: ProductVariantDTO }) => ({
+        parcelType: 'SMALL', // Default parcel type, can be overridden by shipping option
+        quantity: item.quantity || 1,
+        weight: item.variant?.weight ? item.variant.weight / 1000 : undefined, // Convert g to kg if needed
+        dimensions:
+          item.variant?.length && item.variant?.width && item.variant?.height
+            ? {
+                length: item.variant.length,
+                width: item.variant.width,
+                height: item.variant.height,
+              }
+            : undefined,
+      }),
+    )
+
+    if (input.debug) {
+      console.log(`Pieces : ${JSON.stringify(pieces, null, 2)}`)
     }
-    const salesChannelService = container.resolve<ISalesChannelModuleService>(
-      Modules.SALES_CHANNEL
-    );
-    const salesChannel: SalesChannelDTO = await salesChannelService.retrieveSalesChannel(salesChannelId);
 
-    if (!salesChannel.metadata || !salesChannel.metadata.phone) {
-      throw new Error("FedEx create fulfillment failed: Missing sales channel phone");
+    // Build fulfillment input for DHL
+    const fulfillmentInput: CreateFulfillmentInput = {
+      orderReference: input.order?.id,
+      shipper: {
+        firstName: location.name || 'Store',
+        lastName: '',
+        companyName: location.name,
+        street: shipperParsed.street,
+        number: shipperParsed.number,
+        addition: shipperParsed.addition || location.address.address_2 || undefined,
+        postalCode: location.address.postal_code,
+        city: location.address.city || '',
+        countryCode: location.address.country_code.toUpperCase(),
+        phoneNumber: location.address.phone || undefined,
+      },
+      receiver: {
+        firstName: recipient.first_name || '',
+        lastName: recipient.last_name || '',
+        companyName: recipient.company || undefined,
+        street: receiverParsed.street,
+        number: receiverParsed.number,
+        addition: receiverParsed.addition || recipient.address_2 || undefined,
+        postalCode: recipient.postal_code || '',
+        city: recipient.city || '',
+        countryCode: (recipient.country_code || '').toUpperCase(),
+        email: recipient.email || undefined,
+        phoneNumber: recipient.phone || undefined,
+      },
+      pieces,
+      product: dhlProduct,
+      // Add options from shipping option data if available
+      options: shippingOption.data?.options as CreateFulfillmentInput['options'],
     }
 
-    const storeContact: FedexContact = {
-      personName: salesChannel.name,
-      phoneNumber: salesChannel.metadata.phone.toString(),
-    };
+    if (input.debug) {
+      console.log(`DHL Fulfillment Input : ${JSON.stringify(fulfillmentInput, null, 2)}`)
+    }
 
-    const shipment = await createFulfillment(
-      input.baseUrl,
-      input.token,
-      input.accountNumber,
-      originAddress,
-      storeContact,
-      destinationAddress,
-      customerContact,
-      orderItems,
-      shippingMethodCode,
-      input.debug ? console : undefined
-    );
+    // Create DHL client
+    const client = new DHLClient({
+      userId: input.userId,
+      key: input.apiKey,
+      accountId: input.accountId,
+    })
 
-    return new StepResponse({ shipment });
-  }
-);
+    // Create the shipment
+    const shipment = await createFulfillment(client, fulfillmentInput)
+
+    if (input.debug) {
+      console.log(`DHL Shipment Response : ${JSON.stringify(shipment, null, 2)}`)
+    }
+
+    return new StepResponse({ shipment })
+  },
+)
 
 /**
- * Workflow to create a FedEx shipment and generate a shipping label.
+ * Workflow to create a DHL eCommerce shipment and generate a shipping label.
  */
 const createShipmentWorkflow = createWorkflow(
-  "create-fedex-shipment-and-label",
+  'create-dhl-shipment-and-label',
   (input: WorkflowInput): WorkflowResponse<{ shipment: CreateFulfillmentResult }> => {
-    const { shipment } = createFedexShipment(input);
+    const { shipment } = createDhlShipment(input)
+
+    // Get the first piece for tracking info (DHL returns per-piece tracking)
+    const firstPiece = shipment.pieces[0]
 
     const fulfillmentResponse: CreateFulfillmentResult = {
-      labels: [
-        {
-          tracking_url: shipment.trackingUrl,
-          label_url: shipment.labelUrl,
-          tracking_number: shipment.trackingNumber,
-        },
-      ],
+      labels: shipment.pieces.map((piece: DHLLabelPiece) => ({
+        tracking_number: piece.trackerCode,
+        tracking_url: `${DHL_TRACKING_BASE_URL}?tc=${piece.trackerCode}`,
+        label_url: piece.labelId, // Label ID can be used to fetch PDF via getLabelPdf
+      })),
       data: {
-        tracking_url: shipment.trackingUrl,
-        label_url: shipment.labelUrl,
-        tracking_number: shipment.trackingNumber,
+        shipment_id: shipment.shipmentId,
+        tracking_number: firstPiece?.trackerCode,
+        tracking_url: firstPiece
+          ? `${DHL_TRACKING_BASE_URL}?tc=${firstPiece.trackerCode}`
+          : undefined,
+        label_id: firstPiece?.labelId,
+        pieces: shipment.pieces,
       },
-    };
+    }
 
     return new WorkflowResponse({
       shipment: fulfillmentResponse,
-    });
-  }
-);
+    })
+  },
+)
 
-export default createShipmentWorkflow;
+export default createShipmentWorkflow

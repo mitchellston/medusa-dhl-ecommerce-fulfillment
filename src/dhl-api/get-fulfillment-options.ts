@@ -1,5 +1,5 @@
-import { DHLClient } from "./client"
-import { DHLCapabilitiesResponse, DHLCapability } from "./types"
+import { DHLClient } from './client'
+import { DHLCapabilitiesResponse, DHLCapability } from './types'
 
 export type FulfillmentOption = {
   id: string
@@ -18,10 +18,10 @@ export type FulfillmentOption = {
 
 /**
  * Get available fulfillment options from DHL eCommerce
- * 
+ *
  * API Endpoint: GET https://api-gw.dhlparcel.nl/capabilities/{senderType}/{fromCountry}/{toCountry}
- * Documentation: https://api-gw.dhlparcel.nl/docs/guide
- * 
+ * Documentation: https://api-gw.dhlparcel.nl/docs/#/Capabilities
+ *
  * @param client - DHL API client instance
  * @param fromCountry - Origin country code (e.g., "NL")
  * @param toCountry - Destination country code (e.g., "NL", "DE", "BE")
@@ -31,7 +31,7 @@ export async function getFulfillmentOptions(
   client: DHLClient,
   fromCountry: string,
   toCountry: string,
-  senderType: "business" | "consumer" = "business"
+  senderType: 'business' | 'consumer' = 'business',
 ): Promise<FulfillmentOption[]> {
   const capabilities = await client.getCapabilities(senderType, fromCountry, toCountry)
 
@@ -42,7 +42,7 @@ export async function getFulfillmentOptions(
  * Map DHL capabilities response to fulfillment options
  */
 function mapCapabilitiesToFulfillmentOptions(
-  capabilities: DHLCapabilitiesResponse
+  capabilities: DHLCapabilitiesResponse,
 ): FulfillmentOption[] {
   return capabilities.map((capability: DHLCapability) => ({
     id: `${capability.product.key}__${capability.parcelType.key}`,
@@ -52,11 +52,11 @@ function mapCapabilitiesToFulfillmentOptions(
     parcel_type: capability.parcelType.key,
     min_weight_kg: capability.parcelType.minWeightKg,
     max_weight_kg: capability.parcelType.maxWeightKg,
-    options: capability.options.map(opt => ({
+    options: capability.options.map((opt) => ({
       key: opt.key,
       description: opt.description,
-      input_type: opt.inputType
-    }))
+      input_type: opt.inputType,
+    })),
   }))
 }
 
@@ -64,30 +64,7 @@ function mapCapabilitiesToFulfillmentOptions(
  * Get all available shipment options (e.g., signature, evening delivery, etc.)
  */
 export async function getShipmentOptions(
-  client: DHLClient
+  client: DHLClient,
 ): Promise<{ key: string; description: string }[]> {
   return client.getShipmentOptions()
 }
-
-/**
- * Common DHL shipment options reference:
- * 
- * | Key              | Description                                                   |
- * |------------------|---------------------------------------------------------------|
- * | ADD_RETURN_LABEL | Include extra label for return shipment                       |
- * | BOUW             | Delivery to construction site                                 |
- * | BP               | Mailbox delivery                                              |
- * | DOOR             | Delivery to the address of the recipient                      |
- * | EA               | Extra Assurance                                               |
- * | EVE              | Evening delivery                                              |
- * | EXP              | Express (delivery before 11:00 am)                            |
- * | H                | Hold for collection                                           |
- * | HANDT            | Signature on delivery                                         |
- * | INS              | All risk insurance                                            |
- * | NBB              | No neighbor delivery                                          |
- * | PS               | Delivery to DHL Parcelshop/Parcelstation (input: shop ID)     |
- * | REFERENCE        | Reference on label (input: reference string)                  |
- * | S                | Saturday delivery                                             |
- * | SDD              | Same day delivery (requires account activation)               |
- * | SSN              | Undisclosed sender                                            |
- */

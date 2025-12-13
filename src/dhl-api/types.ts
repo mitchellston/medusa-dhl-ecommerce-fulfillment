@@ -1,5 +1,4 @@
 // DHL eCommerce API Types
-// Documentation: https://api-gw.dhlparcel.nl/docs/
 
 export type DHLAuthResponse = {
   accessToken: string
@@ -132,31 +131,31 @@ export type DHLTrackingResponse = {
   }
 }
 
-export type DHLShipmentOption_Keys = 
-  | "ADD_RETURN_LABEL" // Include extra label for return shipment
-  | "BOUW"             // Delivery to construction site
-  | "BP"               // Mailbox delivery
-  | "DOOR"             // Delivery to the address of the recipient
-  | "EA"               // Extra Assurance
-  | "EVE"              // Evening delivery
-  | "EXP"              // Expresser
-  | "EXW"              // Ex Works - recipient pays for transportation
-  | "H"                // Hold for collection
-  | "HANDT"            // Signature on delivery
-  | "HANDTPS"          // Signature on delivery at parcel shop
-  | "INS"              // All risk insurance
-  | "LQ"               // Limited Quantities (dangerous goods)
-  | "NBB"              // No neighbor delivery
-  | "NO_TRACK_TRACE"   // No track and trace for shipment
-  | "PERS_NOTE"        // Email to the receiver
-  | "PRINTLESS"        // Generates a printless label/return label with QR code
-  | "PS"               // Delivery to the specified DHL Parcelshop or DHL Parcelstation
-  | "RECAP"            // Additional proof of delivery
-  | "REFERENCE"        // Reference on label
-  | "REFERENCE2"       // Extra reference label
-  | "S"                // Saturday delivery
-  | "SDD"              // Same day delivery
-  | "SSN"              // Undisclosed sender
+export type DHLShipmentOption_Keys =
+  | 'ADD_RETURN_LABEL' // Include extra label for return shipment
+  | 'BOUW' // Delivery to construction site
+  | 'BP' // Mailbox delivery
+  | 'DOOR' // Delivery to the address of the recipient
+  | 'EA' // Extra Assurance
+  | 'EVE' // Evening delivery
+  | 'EXP' // Expresser
+  | 'EXW' // Ex Works - recipient pays for transportation
+  | 'H' // Hold for collection
+  | 'HANDT' // Signature on delivery
+  | 'HANDTPS' // Signature on delivery at parcel shop
+  | 'INS' // All risk insurance
+  | 'LQ' // Limited Quantities (dangerous goods)
+  | 'NBB' // No neighbor delivery
+  | 'NO_TRACK_TRACE' // No track and trace for shipment
+  | 'PERS_NOTE' // Email to the receiver
+  | 'PRINTLESS' // Generates a printless label/return label with QR code
+  | 'PS' // Delivery to the specified DHL Parcelshop or DHL Parcelstation
+  | 'RECAP' // Additional proof of delivery
+  | 'REFERENCE' // Reference on label
+  | 'REFERENCE2' // Extra reference label
+  | 'S' // Saturday delivery
+  | 'SDD' // Same day delivery
+  | 'SSN' // Undisclosed sender
 
 export type DHLErrorResponse = {
   key: string

@@ -1,12 +1,12 @@
-import { MedusaError } from "@medusajs/framework/utils"
-import { DHLClient } from "./client"
+import { MedusaError } from '@medusajs/framework/utils'
+import { DHLClient } from './client'
 import {
   DHLAddress,
   DHLCreateLabelRequest,
   DHLCreateLabelResponse,
   DHLPiece,
-  DHLShipmentOption
-} from "./types"
+  DHLShipmentOption,
+} from './types'
 
 export type CreateFulfillmentInput = {
   orderReference?: string
@@ -57,12 +57,12 @@ export type CreateFulfillmentInput = {
 /**
  * Convert our internal address format to DHL API format
  */
-function toDHLAddress(address: CreateFulfillmentInput["shipper"]): DHLAddress {
+function toDHLAddress(address: CreateFulfillmentInput['shipper']): DHLAddress {
   return {
     name: {
       firstName: address.firstName,
       lastName: address.lastName,
-      companyName: address.companyName
+      companyName: address.companyName,
     },
     address: {
       countryCode: address.countryCode.toUpperCase(),
@@ -71,70 +71,70 @@ function toDHLAddress(address: CreateFulfillmentInput["shipper"]): DHLAddress {
       street: address.street,
       number: address.number,
       addition: address.addition,
-      isBusiness: !!address.companyName
+      isBusiness: !!address.companyName,
     },
     email: address.email,
-    phoneNumber: address.phoneNumber
+    phoneNumber: address.phoneNumber,
   }
 }
 
 /**
  * Convert pieces to DHL format
  */
-function toDHLPieces(pieces: CreateFulfillmentInput["pieces"]): DHLPiece[] {
-  return pieces.map(piece => ({
-    parcelType: piece.parcelType || "SMALL", // Default parcel type
+function toDHLPieces(pieces: CreateFulfillmentInput['pieces']): DHLPiece[] {
+  return pieces.map((piece) => ({
+    parcelType: piece.parcelType || 'SMALL', // Default parcel type
     quantity: piece.quantity,
     weight: piece.weight,
-    dimensions: piece.dimensions
+    dimensions: piece.dimensions,
   }))
 }
 
 /**
  * Create a DHL eCommerce fulfillment (shipping label)
- * 
+ *
  * API Endpoint: POST https://api-gw.dhlparcel.nl/labels
- * Documentation: https://api-gw.dhlparcel.nl/docs/guide
- * 
+ * Documentation: https://api-gw.dhlparcel.nl/docs/#/Labels
+ *
  * @param client - DHL API client instance
  * @param input - Fulfillment input data
  * @returns DHL label response with tracking codes
  */
 export async function createFulfillment(
   client: DHLClient,
-  input: CreateFulfillmentInput
+  input: CreateFulfillmentInput,
 ): Promise<DHLCreateLabelResponse> {
   // Validate required fields
   if (!input.receiver) {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      "Receiver address is required for DHL fulfillment"
+      'Receiver address is required for DHL fulfillment',
     )
   }
 
   if (!input.shipper) {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      "Shipper address is required for DHL fulfillment"
+      'Shipper address is required for DHL fulfillment',
     )
   }
 
   if (!input.pieces?.length) {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      "At least one piece is required for DHL fulfillment"
+      'At least one piece is required for DHL fulfillment',
     )
   }
 
   // Build the label request
-  const labelRequest: Omit<DHLCreateLabelRequest, "accountId"> = {
+  const labelRequest: Omit<DHLCreateLabelRequest, 'accountId'> = {
     orderReference: input.orderReference,
     receiver: toDHLAddress(input.receiver),
     shipper: toDHLAddress(input.shipper),
     pieces: toDHLPieces(input.pieces),
     options: input.options as DHLShipmentOption[],
     product: input.product,
-    returnLabel: input.returnLabel
+    returnLabel: input.returnLabel,
   }
 
   // Create the label via DHL API
@@ -148,7 +148,7 @@ export async function createFulfillment(
  */
 export async function createReturnLabel(
   client: DHLClient,
-  input: Omit<CreateFulfillmentInput, "returnLabel">
+  input: Omit<CreateFulfillmentInput, 'returnLabel'>,
 ): Promise<DHLCreateLabelResponse> {
   return createFulfillment(client, {
     ...input,
@@ -156,9 +156,6 @@ export async function createReturnLabel(
     shipper: input.receiver,
     receiver: input.shipper,
     returnLabel: true,
-    options: [
-      ...(input.options || []),
-      { key: "ADD_RETURN_LABEL" }
-    ]
+    options: [...(input.options || []), { key: 'ADD_RETURN_LABEL' }],
   })
 }

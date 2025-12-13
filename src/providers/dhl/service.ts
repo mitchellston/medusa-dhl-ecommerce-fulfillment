@@ -49,7 +49,6 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
 
   /**
    * Get DHL credentials from database or options fallback.
-   * @returns {Promise<SetupCredentialsInput>}
    */
   async getCredentials(): Promise<SetupCredentialsInput> {
     const { result, errors } = await getDhlCredentialsWorkflow().run({
@@ -76,7 +75,6 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
 
   /**
    * Create a DHL API client instance.
-   * @returns {Promise<DHLClient>}
    */
   async createClient(): Promise<DHLClient> {
     const credentials = await this.getCredentials()
@@ -89,7 +87,6 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
 
   /**
    * Check if the DHL provider can calculate shipping rates.
-   * @returns {Promise<boolean>}
    */
   async canCalculate(): Promise<boolean> {
     const credentials = await this.getCredentials()
@@ -134,7 +131,6 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
 
   /**
    * Calculate shipping price.
-   * Note: DHL eCommerce API doesn't have a real-time rate API like FedEx.
    * Prices are typically based on contracted rates with DHL.
    * This implementation returns a fixed price or can be extended to use custom logic.
    */

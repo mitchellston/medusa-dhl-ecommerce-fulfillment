@@ -20,6 +20,7 @@ import { createFulfillment, CreateFulfillmentInput } from '../../dhl-api/create-
 import getDhlCredentialsWorkflow from '../../workflows/get-credentials'
 import getStockLocationWorkflow from '../../workflows/get-stock-location'
 import { SetupCredentialsInput } from '../../api/admin/dhl/route'
+import registerTrackingWorkflow from '../../workflows/register-tracking'
 
 type InjectedDependencies = {
   logger: Logger
@@ -386,6 +387,29 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
 
       // Return the fulfillment data with tracking info
       // DHL API returns a flat object for single labels
+      // Also register this shipment for automated tracking sync (shipped/delivered)
+      if (response.trackerCode && shippingAddress.postal_code && fulfillment.id) {
+        try {
+          await registerTrackingWorkflow().run({
+            input: {
+              fulfillment_id: fulfillment.id as string,
+              order_id: order?.id as string | undefined,
+              tracker_code: response.trackerCode,
+              postal_code: shippingAddress.postal_code,
+            },
+          })
+        } catch (e) {
+          // Don't fail fulfillment creation if tracking registration fails
+          if (credentials.enable_logs) {
+            this.logger_.warn(
+              `DHL: Failed to register tracking for automation: ${
+                e instanceof Error ? e.message : String(e)
+              }`,
+            )
+          }
+        }
+      }
+
       return {
         data: {
           shipment_id:

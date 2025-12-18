@@ -106,9 +106,8 @@ const createDhlShipment = createStep(
     }
 
     // Get recipient address from order
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const recipient =
-      (input.order as any)?.shipping_address ||
+      input.order?.shipping_address ||
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (input.data as any)['to_address'] ||
       {}

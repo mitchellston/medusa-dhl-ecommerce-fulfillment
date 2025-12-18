@@ -37,80 +37,87 @@ This ensures accurate shipping costs for your customers and simplifies the proce
 
 ## Compatibility
 
-This module/plugin is compatible with versions >= 2.4.0 of `@medusajs/medusa`. 
+This module/plugin is compatible with versions >= 2.4.0 of `@medusajs/medusa`.
 
 ## Getting Started
 
 To get started with the FedEx Fulfillment Integration, follow these steps:
 
-1. **Create a FedEx Account**  
-  - Go to the [FedEx website](https://www.fedex.com/) and sign up for a merchant account.  
-  - You can use a production or a sandbox account for testing purposes.
+1. **Create a FedEx Account**
 
-2. **Register as a Developer**  
-  - Visit the [FedEx Developer Portal](https://developer.fedex.com/api/en-us/home.html).  
-  - Log in with your FedEx account and register as a developer if you haven't already.
+- Go to the [FedEx website](https://www.fedex.com/) and sign up for a merchant account.
+- You can use a production or a sandbox account for testing purposes.
 
-3. **Create an Application**  
-  - In the Developer Portal, create a new application.  
-  - Choose the APIs you want to use (e.g., Shipping, Tracking, etc.).
+2. **Register as a Developer**
 
-4. **Generate API Keys**  
-  - After creating your application, generate your API credentials:  
-    - **Client ID**  
-    - **Client Secret**  
-    - **Account Number**  
-  - For sandbox testing, use the sandbox credentials provided.
-  - **Important:** Save these credentials securely. You will need to use them later in your Medusa configuration.
+- Visit the [FedEx Developer Portal](https://developer.fedex.com/api/en-us/home.html).
+- Log in with your FedEx account and register as a developer if you haven't already.
 
-5. **Configure the Plugin**  
-  - Add your FedEx API credentials to your Medusa configuration as described in the plugin documentation.
+3. **Create an Application**
 
-6. **Test the Integration**  
-  - Use your sandbox credentials to test the integration before switching to production.
+- In the Developer Portal, create a new application.
+- Choose the APIs you want to use (e.g., Shipping, Tracking, etc.).
+
+4. **Generate API Keys**
+
+- After creating your application, generate your API credentials:
+  - **Client ID**
+  - **Client Secret**
+  - **Account Number**
+- For sandbox testing, use the sandbox credentials provided.
+- **Important:** Save these credentials securely. You will need to use them later in your Medusa configuration.
+
+5. **Configure the Plugin**
+
+- Add your FedEx API credentials to your Medusa configuration as described in the plugin documentation.
+
+6. **Test the Integration**
+
+- Use your sandbox credentials to test the integration before switching to production.
 
 For more details, refer to the [FedEx API Documentation](https://developer.fedex.com/api/en-us/home.html).
 
 ## Installation
+
 To install the FedEx Fulfillment Integration, follow these steps:
 
 1. **Install the package**
 
-  ```bash
-  npm install @igorppbr/medusa-v2-fedex-fulfillment
-  ```
+```bash
+npm install @igorppbr/medusa-v2-fedex-fulfillment
+```
 
 2. **Add the module and plugin to your `medusa-config.ts`**
 
-  ```ts
-  modules: [
-    {
-     resolve: "@medusajs/medusa/fulfillment",
-     options: {
-      providers: [
-        {
-         resolve: "@igorppbr/medusa-v2-fedex-fulfillment/providers/fedex",
-         id: "fedex",
-         options: {
-          isEnabled: true, // Enable or disable integration
-          clientId: "clientId", // FedEx Client ID
-          clientSecret: "clientSecret", // FedEx Client Secret
-          accountNumber: "accountNumber", // FedEx Account Number
-          isSandbox: true, // Enable sandbox mode for testing
-          enableLogs: true, // Enable logging
-          weightUnitOfMeasure: "LB" // Weight unit of measure
-         },
-        },
-      ],
-     },
-    },
-  ],
-  plugins: [
-    {
-     resolve: "@igorppbr/medusa-v2-fedex-fulfillment", // This is used to enable custom admin widgets to see the tracking URLs and labels
-     options: {},
-    }
-  ]
+```ts
+modules: [
+  {
+   resolve: "@medusajs/medusa/fulfillment",
+   options: {
+    providers: [
+      {
+       resolve: "@igorppbr/medusa-v2-fedex-fulfillment/providers/fedex",
+       id: "fedex",
+       options: {
+        isEnabled: true, // Enable or disable integration
+        clientId: "clientId", // FedEx Client ID
+        clientSecret: "clientSecret", // FedEx Client Secret
+        accountNumber: "accountNumber", // FedEx Account Number
+        isSandbox: true, // Enable sandbox mode for testing
+        enableLogs: true, // Enable logging
+        weightUnitOfMeasure: "LB" // Weight unit of measure
+       },
+      },
+    ],
+   },
+  },
+],
+plugins: [
+  {
+   resolve: "@igorppbr/medusa-v2-fedex-fulfillment", // This is used to enable custom admin widgets to see the tracking URLs and labels
+   options: {},
+  }
+]
 ```
 
 > **⚠️ Alternative:**  
@@ -181,6 +188,23 @@ When you create a shipment for an order in Medusa, the integration will **automa
 
 <br/>
 
+## DHL: Automatic “Shipped” / “Delivered” Updates (Tracking Sync)
+
+This package also includes a **DHL eCommerce** fulfillment provider. By default, Medusa won’t automatically flip a fulfillment to **shipped**/**delivered** just because a label exists — this plugin can now **sync DHL tracking events** and update those statuses for you.
+
+- **What it does**: whenever a DHL label is created, the plugin stores the `trackerCode` + destination `postal_code` in a `dhl_tracking` table. A sync runner periodically calls DHL Track & Trace and then marks the fulfillment **shipped** (first “in transit” event) and **delivered** (delivered event).
+- **What you need**:
+  - DHL credentials saved in Admin (Settings → DHL), or configured via plugin options.
+  - Orders must have a destination postal code (required by DHL Track & Trace).
+  - Run the DB migration that creates the `dhl_tracking` table.
+
+### Triggering the sync
+
+- **Option A (recommended)**: enable Medusa’s internal job runner and use the included job `dhl-tracking-sync` (runs every 15 minutes).
+- **Option B**: call the Admin endpoint from an external cron:
+  - `POST /admin/dhl/tracking-sync`
+  - Body: `{ "limit": 50, "dry_run": false }`
+
 ## Contributing
 
 We welcome contributions to the FedEx Fulfillment Integration! If you have suggestions, improvements, or bug fixes, please follow these steps:
@@ -190,6 +214,7 @@ We welcome contributions to the FedEx Fulfillment Integration! If you have sugge
 
 2. **Create a New Branch**  
    Create a new branch for your changes:
+
    ```bash
    git checkout -b my-feature-branch
    ```

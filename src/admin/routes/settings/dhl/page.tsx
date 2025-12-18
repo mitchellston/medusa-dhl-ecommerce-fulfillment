@@ -104,12 +104,12 @@ const DHLSettingsPageInner = () => {
         <Text className="text-ui-fg-subtle">
           Configure your DHL eCommerce API credentials. Get your credentials from the{' '}
           <a
-            href="https://api-gw.dhlparcel.nl/docs/"
+            href="https://my.dhlecommerce.nl/business/settings/api-keys/"
             target="_blank"
             rel="noopener noreferrer"
             className="text-amber-700 hover:underline font-semibold"
           >
-            DHL Developer Portal
+            DHL Ecommerce portal
           </a>
           .
         </Text>

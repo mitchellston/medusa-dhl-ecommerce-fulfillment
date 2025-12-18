@@ -9,5 +9,6 @@ export const DhlSetting = model.define(
         api_key: model.text(),
         account_id: model.text(),
         enable_logs: model.boolean(),
+        boxes: model.json().nullable(),
     }
 )

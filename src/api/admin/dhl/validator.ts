@@ -1,10 +1,2 @@
-import { z } from "zod"
-
-export const PostDHLSettings = z.object({
-  is_enabled: z.boolean(),
-  user_id: z.string().min(2).max(100),
-  api_key: z.string().min(2).max(100),
-  account_id: z.string().min(2).max(100),
-  enable_logs: z.boolean(),
-})
+export { DhlSettingsSchema as PostDHLSettings } from "../../../modules/setting/schema"
 

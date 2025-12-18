@@ -31,6 +31,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object'
 }
 
+function isMissingDhlTrackingTableError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e)
+  return (
+    msg.includes('relation "public.dhl_tracking" does not exist') ||
+    msg.includes('relation "dhl_tracking" does not exist') ||
+    msg.includes('dhl_tracking" does not exist')
+  )
+}
+
 async function tryMarkShipped(
   container: ResolvableContainer,
   fulfillmentId: string,
@@ -215,8 +224,23 @@ const syncTrackingStep = createStep<SyncDhlTrackingInput, SyncDhlTrackingResult,
 
     const limit = input.limit ?? 50
     const dryRun = !!input.dry_run
-
-    const rows = await trackingService.listPendingSync({ limit })
+    let rows: unknown[] = []
+    try {
+      rows = (await trackingService.listPendingSync({ limit })) as unknown[]
+    } catch (e) {
+      if (isMissingDhlTrackingTableError(e)) {
+        return new StepResponse({
+          success: false,
+          synced: 0,
+          updated: 0,
+          dry_run: dryRun,
+          message:
+            'DHL tracking sync is not initialized yet: missing table "dhl_tracking". ' +
+            'Run the plugin migrations (the migration that creates "dhl_tracking") and retry.',
+        })
+      }
+      throw e
+    }
 
     let synced = 0
     let updated = 0

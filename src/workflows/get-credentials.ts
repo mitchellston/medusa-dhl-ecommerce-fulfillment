@@ -6,19 +6,19 @@ import {
 } from "@medusajs/framework/workflows-sdk";
 
 import { DHL_SETTINGS_MODULE } from "../modules/setting";
-import { SetupCredentialsInput } from "../api/admin/dhl/route";
+import { DhlSettingsInput } from "../modules/setting/schema";
 import DhlSettingsModuleService from "../modules/setting/service";
 
 /**
  * Get DHL credentials from the settings module.
- * @returns StepResponse<SetupCredentialsInput | null>
+ * @returns StepResponse<DhlSettingsInput | null>
  */
 const getDatabaseCredentials = createStep(
   "get-dhl-database-credentials",
   async (
     _input,
     { container }
-  ): Promise<StepResponse<SetupCredentialsInput | null>> => {
+  ): Promise<StepResponse<DhlSettingsInput | null>> => {
     try {
       const dhlSettingService: DhlSettingsModuleService = container.resolve(DHL_SETTINGS_MODULE)
       const result = await dhlSettingService.getCredentials();
@@ -32,7 +32,7 @@ const getDatabaseCredentials = createStep(
 
 /**
  * Create the workflow for getting DHL credentials.
- * @returns WorkflowResponse<SetupCredentialsInput | null>
+ * @returns WorkflowResponse<DhlSettingsInput | null>
  */
 const getCredentialsWorkflow = createWorkflow(
   "get-dhl-credentials",

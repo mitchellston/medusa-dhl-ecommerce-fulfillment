@@ -19,6 +19,8 @@ import { Modules } from '@medusajs/framework/utils'
 import { DHLClient } from '../dhl-api/client'
 import { createFulfillment, CreateFulfillmentInput } from '../dhl-api/create-fulfillment'
 import { DHLCreateLabelResponse } from '../dhl-api/types'
+import getCredentialsWorkflow from './get-credentials'
+import { selectBoxForItems } from '../providers/dhl/box-selection'
 
 type WorkflowInput = {
   userId: string
@@ -138,13 +140,19 @@ const createDhlShipment = createStep(
       console.log(`Shipping Option: ${JSON.stringify(shippingOption, null, 2)}`)
     }
 
-    // Get the DHL product type from shipping option data (e.g., "DOOR", "BP", "PS")
+    // Get the DHL product type from shipping option data.
+    // (Note: in the provider flow we use `data.product_key`; this workflow is legacy and uses `carrier_code`.)
     const dhlProduct = shippingOption.data?.carrier_code?.toString() || 'DOOR'
+
+    // Load DHL settings to access configured boxes, then select parcelType dynamically.
+    const { result: settings } = await getCredentialsWorkflow(container).run({ input: {} })
+    const { selectedBox } = selectBoxForItems(input.items as unknown[], settings?.boxes ?? [])
+    const selectedParcelType = selectedBox?.dhl_parcel_type ?? 'SMALL'
 
     // Build pieces from order items
     const pieces: CreateFulfillmentInput['pieces'] = input.items.map(
       (item: FulfillmentItemDTO & { variant?: ProductVariantDTO }) => ({
-        parcelType: 'SMALL', // Default parcel type, can be overridden by shipping option
+        parcelType: selectedParcelType,
         quantity: item.quantity || 1,
         weight: item.variant?.weight ? item.variant.weight / 1000 : undefined, // Convert g to kg if needed
         dimensions:

@@ -114,9 +114,13 @@ export async function createFulfillment(
     )
   }
 
-  // Get the first piece to extract parcel type and weight
+  // Root-level fields: DHL requires parcelTypeKey and commonly uses quantity/weight at root.
+  // For multi-piece shipments, we also send `pieces`.
   const firstPiece = input.pieces[0]
   const parcelTypeKey = firstPiece.parcelType || 'SMALL'
+
+  const totalQuantity = input.pieces.reduce((sum, p) => sum + Number(p.quantity || 0), 0)
+  const totalWeight = input.pieces.reduce((sum, p) => sum + Number(p.weight || 0), 0)
 
   // Build the label request with all required root-level fields
   const labelRequest: Omit<DHLCreateLabelRequest, 'accountId'> = {
@@ -128,9 +132,19 @@ export async function createFulfillment(
     shipper: toDHLAddress(input.shipper),
     options: (input.options as DHLShipmentOption[]) || [], // Required: Must be an array
     returnLabel: input.returnLabel,
-    quantity: firstPiece.quantity,
-    weight: firstPiece.weight,
+    quantity: totalQuantity > 0 ? totalQuantity : firstPiece.quantity,
+    weight: totalWeight > 0 ? totalWeight : firstPiece.weight,
     product: input.product,
+  }
+
+  // Add pieces for multi-piece shipments (multi-collo).
+  if (input.pieces.length > 1) {
+    labelRequest.pieces = input.pieces.map((p) => ({
+      parcelType: p.parcelType || parcelTypeKey,
+      quantity: p.quantity,
+      weight: p.weight,
+      dimensions: p.dimensions,
+    }))
   }
 
   // Create the label via DHL API

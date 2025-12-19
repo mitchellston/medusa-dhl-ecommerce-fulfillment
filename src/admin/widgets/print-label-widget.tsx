@@ -14,6 +14,15 @@ type SelectedBoxInfo = {
   used_fallback_largest?: boolean
 }
 
+type SelectedBoxesInfo = {
+  id?: string
+  name?: string
+  inner_cm?: { length: number; width: number; height: number }
+  max_weight_kg?: number
+  weight_kg?: number
+  units?: number
+}[]
+
 type FulfillmentWithLabels = AdminOrderFulfillment & {
   labels?: FulfillmentLabelType[]
   data?: Record<string, unknown>
@@ -29,10 +38,14 @@ const DHLWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
   const dhlFulfillments = (data.fulfillments as FulfillmentWithLabels[])
     .map((f) => {
       const selectedBox = (f.data?.selected_box as SelectedBoxInfo | undefined) ?? undefined
+      const selectedBoxes = (f.data?.selected_boxes as SelectedBoxesInfo | undefined) ?? undefined
       const labels = (f.labels ?? []).filter((l) => l.label_url)
-      return { fulfillment: f, selectedBox, labels }
+      return { fulfillment: f, selectedBox, selectedBoxes, labels }
     })
-    .filter(({ selectedBox, labels }) => Boolean(selectedBox) || labels.length > 0)
+    .filter(
+      ({ selectedBox, selectedBoxes, labels }) =>
+        Boolean(selectedBox) || Boolean(selectedBoxes?.length) || labels.length > 0,
+    )
 
   // If no DHL-related info, return an empty component
   if (dhlFulfillments.length === 0) {
@@ -60,7 +73,7 @@ const DHLWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
           </text>
         </svg>
       </div>
-      {dhlFulfillments.map(({ fulfillment, selectedBox, labels }, idx) => {
+      {dhlFulfillments.map(({ fulfillment, selectedBox, selectedBoxes, labels }, idx) => {
         const fulfillmentId = (fulfillment as unknown as { id?: string }).id ?? String(idx)
         const parcelType = (fulfillment.data?.parcel_type as string | undefined) ?? undefined
         const boxLabel = selectedBox?.name || selectedBox?.id
@@ -68,7 +81,33 @@ const DHLWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
 
         return (
           <div key={fulfillmentId} className="px-6 py-4 space-y-3">
-            {boxLabel ? (
+            {selectedBoxes?.length ? (
+              <div className="text-ui-fg-subtle grid grid-cols-2 items-start">
+                <p className="font-medium font-sans txt-compact-small">
+                  Boxes ({selectedBoxes.length})
+                </p>
+                <div className="space-y-1">
+                  {selectedBoxes.map((b, bidx) => {
+                    const dims = b.inner_cm
+                      ? `${b.inner_cm.length}×${b.inner_cm.width}×${b.inner_cm.height} cm`
+                      : undefined
+                    const w =
+                      typeof b.weight_kg === 'number' ? `${b.weight_kg.toFixed(2)} kg` : undefined
+                    const units = typeof b.units === 'number' ? `${b.units} units` : undefined
+                    const details = [dims, w, units].filter(Boolean).join(' · ')
+                    return (
+                      <p
+                        key={`${fulfillmentId}__box__${bidx}`}
+                        className="font-normal font-sans txt-compact-small"
+                      >
+                        {b.name || b.id || `Box ${bidx + 1}`}
+                        {details ? ` — ${details}` : ''}
+                      </p>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : boxLabel ? (
               <div className="text-ui-fg-subtle grid grid-cols-2 items-start">
                 <p className="font-medium font-sans txt-compact-small">Selected box</p>
                 <p className="font-normal font-sans txt-compact-small">

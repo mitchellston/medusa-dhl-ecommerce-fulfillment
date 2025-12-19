@@ -12,16 +12,15 @@ import {
 import { DHLClient } from '../../dhl-api/client'
 import { DHLCapabilitiesResponse } from '../../dhl-api/types'
 import {
-  getFulfillmentOptions as getRouteFulfillmentOptions,
-  getParcelTypesForProduct,
   selectOptimalParcelType,
+  selectParcelTypeForPackagesFromCapabilities,
 } from '../../dhl-api/get-fulfillment-options'
 import { createFulfillment, CreateFulfillmentInput } from '../../dhl-api/create-fulfillment'
 import getDhlCredentialsWorkflow from '../../workflows/get-credentials'
 import getStockLocationWorkflow from '../../workflows/get-stock-location'
 import { DhlSettingsInput } from '../../modules/setting/schema'
 import registerTrackingWorkflow from '../../workflows/register-tracking'
-import { selectBoxForItems } from './box-selection'
+import { packItemsIntoBoxes } from './box-selection'
 
 type InjectedDependencies = {
   logger: Logger
@@ -253,32 +252,57 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
       const door = capabilities.find((c) => c.product.key === 'DOOR')?.product.key
       const productKey = explicitProductKey ?? door ?? capabilities[0]?.product.key
 
-      // Parcel type is derived from DHL capabilities + cart weight (never from a manually-configured box parcel type).
       const rawItems = (context.items ?? []) as unknown[]
-      const totalWeightGrams = rawItems.reduce<number>(
-        (sum, item) => sum + getItemWeightGrams(item),
-        0,
-      )
-      const totalWeightKg = totalWeightGrams / 1000
 
-      let parcelType: string | undefined
+      // Multi-box packing (soft-fallback if boxes not configured or dims missing)
+      const packing = packItemsIntoBoxes(rawItems, credentials.boxes ?? [])
+      const packageCount = packing.packages.length > 0 ? packing.packages.length : 1
 
-      if (productKey && totalWeightKg > 0) {
-        const parcelTypes = capabilities
-          .filter((c) => c.product.key === productKey)
-          .map((c) => ({
-            key: c.parcelType.key,
-            min_weight_kg: c.parcelType.minWeightKg,
-            max_weight_kg: c.parcelType.maxWeightKg,
-          }))
+      // Parcel type: prefer capability-based selection that respects (optional) dimension limits + per-piece weight.
+      const packagesForSelection =
+        packing.packages.length > 0
+          ? packing.packages.map((p) => ({
+              weight_kg: p.weight_kg,
+              dimensions_cm: {
+                length: p.box.inner_cm.length,
+                width: p.box.inner_cm.width,
+                height: p.box.inner_cm.height,
+              },
+            }))
+          : [
+              {
+                weight_kg:
+                  rawItems.reduce<number>((sum, item) => sum + getItemWeightGrams(item), 0) / 1000,
+              },
+            ]
 
-        const optimalParcelType = selectOptimalParcelType(parcelTypes, totalWeightKg)
-        if (optimalParcelType) {
-          parcelType = optimalParcelType
+      let parcelType =
+        selectParcelTypeForPackagesFromCapabilities(
+          capabilities,
+          productKey,
+          packagesForSelection,
+        ) ?? undefined
+
+      // Soft fallback to weight-only selection if we couldn't pick a parcel type by constraints.
+      if (!parcelType) {
+        const totalWeightGrams = rawItems.reduce<number>(
+          (sum, item) => sum + getItemWeightGrams(item),
+          0,
+        )
+        const totalWeightKg = totalWeightGrams / 1000
+        if (productKey && totalWeightKg > 0) {
+          const parcelTypes = capabilities
+            .filter((c) => c.product.key === productKey)
+            .map((c) => ({
+              key: c.parcelType.key,
+              min_weight_kg: c.parcelType.minWeightKg,
+              max_weight_kg: c.parcelType.maxWeightKg,
+            }))
+          parcelType = selectOptimalParcelType(parcelTypes, totalWeightKg)
         }
       }
 
-      // Fallback to the first parcel type DHL returned for this product/route.
+      // Final fallback to the first parcel type DHL returned for this product/route.
       if (!parcelType) {
         parcelType =
           capabilities.find((c) => c.product.key === productKey)?.parcelType.key ??
@@ -295,7 +319,7 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
       const withoutTax = matched?.parcelType?.price?.withoutTax
       const currency = matched?.parcelType?.price?.currency ?? 'EUR'
 
-      const amount =
+      let amount =
         typeof withTax === 'number'
           ? withTax
           : typeof withoutTax === 'number'
@@ -305,6 +329,44 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
       if (typeof amount !== 'number') {
         throw new Error(
           `Missing DHL price for product=${matched?.product?.key ?? 'n/a'} parcelType=${matched?.parcelType?.key ?? 'n/a'}`,
+        )
+      }
+
+      // Optional: add prices for selected shipment options (if provided in optionData/data)
+      const selectedOptions =
+        (dataRec['shipment_options'] as unknown) ??
+        (optionDataRec['shipment_options'] as unknown) ??
+        (dataRec['options'] as unknown) ??
+        (optionDataRec['options'] as unknown) ??
+        []
+
+      let optionsAmount = 0
+      if (Array.isArray(selectedOptions) && matched?.options?.length) {
+        const keys = selectedOptions
+          .map((o) => {
+            if (!o || typeof o !== 'object') return undefined
+            if (!('key' in o)) return undefined
+            const k = (o as { key?: unknown }).key
+            return typeof k === 'string' ? k : undefined
+          })
+          .filter((k): k is string => typeof k === 'string')
+        for (const k of keys) {
+          const opt = matched.options.find((o) => o.key === k)
+          const optPrice = opt?.price?.withTax ?? opt?.price?.withoutTax
+          if (typeof optPrice === 'number') optionsAmount += optPrice
+        }
+      }
+
+      // Multiply by number of packages (multi-box)
+      amount = (amount + optionsAmount) * packageCount
+
+      if (credentials.enable_logs) {
+        const fallbackMsg =
+          packing.diagnostics.used_fallback_largest || packing.diagnostics.unplaced_units > 0
+            ? ` (packing fallback: used_fallback_largest=${packing.diagnostics.used_fallback_largest}, unplaced_units=${packing.diagnostics.unplaced_units})`
+            : ''
+        this.logger_.info(
+          `DHL: Price calc product=${productKey ?? 'n/a'} parcelType=${parcelType} packages=${packageCount}${fallbackMsg}`,
         )
       }
 
@@ -429,64 +491,112 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
       const toBusiness = Boolean(data.to_business)
 
       const toCountry = String(shippingAddress.country_code || 'NL').toUpperCase()
-      const routeOptions = await getRouteFulfillmentOptions(client, 'NL', toCountry, toBusiness)
+      const capabilities = await client.getCapabilities('NL', toCountry, toBusiness)
+
+      if (!capabilities || capabilities.length === 0) {
+        throw new Error(`No DHL capabilities returned for route NL→${toCountry}`)
+      }
 
       // Prefer DOOR for home delivery; fallback to first available product.
       const explicitProductKey = (data.product_key as string | undefined) ?? undefined // backward compat
-      const door = routeOptions.find((o) => o.product_key === 'DOOR')?.product_key
-      const productKey = explicitProductKey ?? door ?? routeOptions[0]?.product_key
+      const door = capabilities.find((c) => c.product.key === 'DOOR')?.product.key
+      const productKey = explicitProductKey ?? door ?? capabilities[0]?.product.key
 
-      // We still select a box for packing/visibility, but parcel type is derived from DHL route options + weight.
-      const { selectedBox, used_fallback_largest } = selectBoxForItems(
-        items as unknown[],
-        credentials.boxes ?? [],
-      )
-      let parcelType: string | undefined
+      // Pack into multiple boxes (soft fallback if boxes not configured / dims missing).
+      const packing = packItemsIntoBoxes(items as unknown[], credentials.boxes ?? [])
+      const selectedBox = packing.packages[0]?.box // keep legacy single-box field for backwards compat/admin display
+      const used_fallback_largest = packing.diagnostics.used_fallback_largest
 
-      if (!parcelType) {
-        // Primary selection is weight-based using DHL's parcelType min/max.
-        if (productKey && totalWeightKg > 0) {
-          const parcelTypes = getParcelTypesForProduct(routeOptions, productKey)
+      const packagesForSelection =
+        packing.packages.length > 0
+          ? packing.packages.map((p) => ({
+              weight_kg: p.weight_kg,
+              dimensions_cm: {
+                length: p.box.inner_cm.length,
+                width: p.box.inner_cm.width,
+                height: p.box.inner_cm.height,
+              },
+            }))
+          : [{ weight_kg: totalWeightKg }]
 
-          if (parcelTypes.length > 0) {
-            const optimalParcelType = selectOptimalParcelType(parcelTypes, totalWeightKg)
-            if (optimalParcelType) {
-              parcelType = optimalParcelType
-            }
-          }
-        }
+      let parcelType =
+        selectParcelTypeForPackagesFromCapabilities(
+          capabilities,
+          productKey,
+          packagesForSelection,
+        ) ?? undefined
+
+      // Soft fallback: weight-only parcel type selection.
+      if (!parcelType && productKey && totalWeightKg > 0) {
+        const parcelTypes = capabilities
+          .filter((c) => c.product.key === productKey)
+          .map((c) => ({
+            key: c.parcelType.key,
+            min_weight_kg: c.parcelType.minWeightKg,
+            max_weight_kg: c.parcelType.maxWeightKg,
+          }))
+        const optimal = selectOptimalParcelType(parcelTypes, totalWeightKg)
+        if (optimal) parcelType = optimal
       }
 
-      // If still no parcel type, fall back to the first parcel type DHL returned for this product/route.
+      // Final fallback: first parcel type DHL returned for this product/route.
       if (!parcelType) {
         parcelType =
-          routeOptions.find((o) => o.product_key === productKey)?.parcel_type ??
-          routeOptions[0]?.parcel_type ??
+          capabilities.find((c) => c.product.key === productKey)?.parcelType.key ??
+          capabilities[0]?.parcelType.key ??
           'SMALL'
       }
 
-      // Final guard: ensure the selected parcelType exists in DHL's route options.
-      if (!routeOptions.some((o) => o.product_key === productKey && o.parcel_type === parcelType)) {
-        parcelType = routeOptions[0]?.parcel_type ?? 'SMALL'
+      // Final guard: ensure parcelType exists for selected productKey; otherwise take first capability for that product.
+      if (
+        productKey &&
+        !capabilities.some((c) => c.product.key === productKey && c.parcelType.key === parcelType)
+      ) {
+        parcelType =
+          capabilities.find((c) => c.product.key === productKey)?.parcelType.key ??
+          capabilities[0]?.parcelType.key ??
+          'SMALL'
       }
 
+      // Safety: if this product is mono-collo only, don't send multi-piece.
+      const isMonoCollo = Boolean(
+        productKey
+          ? capabilities.find((c) => c.product.key === productKey)?.product.monoColloProduct
+          : false,
+      )
+
       if (credentials.enable_logs) {
-        const boxMsg = selectedBox
-          ? `box '${selectedBox.name || selectedBox.id}'${used_fallback_largest ? ' (fallback: largest box)' : ''}`
-          : 'no box selected'
+        const pkgCount = packing.packages.length > 0 ? packing.packages.length : 1
+        const fallbackMsg =
+          packing.diagnostics.used_fallback_largest || packing.diagnostics.unplaced_units > 0
+            ? ` (packing fallback: used_fallback_largest=${packing.diagnostics.used_fallback_largest}, unplaced_units=${packing.diagnostics.unplaced_units})`
+            : ''
+        const monoMsg =
+          isMonoCollo && pkgCount > 1 ? ' (mono-collo product; collapsing to single piece)' : ''
         this.logger_.info(
-          `DHL: Selected parcel type '${parcelType}' (toCountry=${toCountry}, product '${productKey ?? 'n/a'}', toBusiness=${toBusiness}, ${boxMsg})`,
+          `DHL: Selected parcel type '${parcelType}' (toCountry=${toCountry}, product '${productKey ?? 'n/a'}', toBusiness=${toBusiness}, packages=${pkgCount})${fallbackMsg}${monoMsg}`,
         )
       }
 
-      // Build pieces - using a single piece with total weight and optimal parcel type
-      const pieces = [
-        {
-          parcelType,
-          quantity: 1,
-          weight: totalWeightKg > 0 ? totalWeightKg : (data.weight as number | undefined),
-        },
-      ]
+      const pieces: CreateFulfillmentInput['pieces'] =
+        !isMonoCollo && packing.packages.length > 1
+          ? packing.packages.map((p) => ({
+              parcelType,
+              quantity: 1,
+              weight: p.weight_kg,
+              dimensions: {
+                length: p.box.inner_cm.length,
+                width: p.box.inner_cm.width,
+                height: p.box.inner_cm.height,
+              },
+            }))
+          : [
+              {
+                parcelType,
+                quantity: 1,
+                weight: totalWeightKg > 0 ? totalWeightKg : (data.weight as number | undefined),
+              },
+            ]
 
       const fulfillmentInput: CreateFulfillmentInput = {
         orderReference: order?.id,
@@ -587,6 +697,18 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
                 used_fallback_largest,
               }
             : undefined,
+          selected_boxes:
+            packing.packages.length > 0
+              ? packing.packages.map((p) => ({
+                  id: p.box.id,
+                  name: p.box.name,
+                  inner_cm: p.box.inner_cm,
+                  max_weight_kg: p.box.max_weight_kg,
+                  weight_kg: p.weight_kg,
+                  units: p.units,
+                }))
+              : undefined,
+          packing_diagnostics: packing.diagnostics,
           piece_number: response.pieceNumber,
           routing_code: response.routingCode,
         },

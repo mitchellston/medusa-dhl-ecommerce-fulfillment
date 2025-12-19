@@ -19,7 +19,12 @@ import { Modules } from '@medusajs/framework/utils'
 import { DHLClient } from '../dhl-api/client'
 import { createFulfillment, CreateFulfillmentInput } from '../dhl-api/create-fulfillment'
 import { DHLCreateLabelResponse } from '../dhl-api/types'
-import { selectOptimalParcelType } from '../dhl-api/get-fulfillment-options'
+import {
+  selectOptimalParcelType,
+  selectParcelTypeForPackagesFromCapabilities,
+} from '../dhl-api/get-fulfillment-options'
+import getCredentialsWorkflow from './get-credentials'
+import { packItemsIntoBoxes } from '../providers/dhl/box-selection'
 
 type WorkflowInput = {
   userId: string
@@ -170,6 +175,27 @@ const createDhlShipment = createStep(
       }, 0)
       const totalWeightKg = totalWeightGrams / 1000
 
+      // Pack items into configured boxes (best-effort). If boxes are not configured, this returns no packages.
+      const { result: settings } = await getCredentialsWorkflow().run({ input: {} })
+      const packing = packItemsIntoBoxes(input.items as unknown[], settings?.boxes ?? [])
+      const packagesForSelection =
+        packing.packages.length > 0
+          ? packing.packages.map((p) => ({
+              weight_kg: p.weight_kg,
+              dimensions_cm: {
+                length: p.box.inner_cm.length,
+                width: p.box.inner_cm.width,
+                height: p.box.inner_cm.height,
+              },
+            }))
+          : [{ weight_kg: totalWeightKg }]
+
+      const byConstraints = selectParcelTypeForPackagesFromCapabilities(
+        capabilities,
+        dhlProduct,
+        packagesForSelection,
+      )
+
       const parcelTypes = capabilities
         .filter((c) => c.product.key === dhlProduct)
         .map((c) => ({
@@ -182,6 +208,7 @@ const createDhlShipment = createStep(
         parcelTypes.length > 0 ? selectOptimalParcelType(parcelTypes, totalWeightKg) : undefined
 
       selectedParcelType =
+        byConstraints ??
         optimal ??
         capabilities.find((c) => c.product.key === dhlProduct)?.parcelType.key ??
         capabilities[0]?.parcelType.key ??
@@ -197,22 +224,40 @@ const createDhlShipment = createStep(
       })
     }
 
-    // Build pieces from order items
-    const pieces: CreateFulfillmentInput['pieces'] = input.items.map(
-      (item: FulfillmentItemDTO & { variant?: ProductVariantDTO }) => ({
-        parcelType: selectedParcelType,
-        quantity: item.quantity || 1,
-        weight: item.variant?.weight ? item.variant.weight / 1000 : undefined, // Convert g to kg if needed
-        dimensions:
-          item.variant?.length && item.variant?.width && item.variant?.height
-            ? {
-                length: item.variant.length,
-                width: item.variant.width,
-                height: item.variant.height,
-              }
-            : undefined,
-      }),
-    )
+    // Build pieces from packed packages (one piece per box). If boxes aren't configured, fall back to single piece.
+    let pieces: CreateFulfillmentInput['pieces']
+    try {
+      const { result: settings } = await getCredentialsWorkflow().run({ input: {} })
+      const packing = packItemsIntoBoxes(input.items as unknown[], settings?.boxes ?? [])
+      pieces =
+        packing.packages.length > 0
+          ? packing.packages.map((p) => ({
+              parcelType: selectedParcelType,
+              quantity: 1,
+              weight: p.weight_kg,
+              dimensions: {
+                length: p.box.inner_cm.length,
+                width: p.box.inner_cm.width,
+                height: p.box.inner_cm.height,
+              },
+            }))
+          : [
+              {
+                parcelType: selectedParcelType,
+                quantity: 1,
+                weight:
+                  input.items.reduce((sum, item) => {
+                    const anyItem = item as FulfillmentItemDTO & { variant?: ProductVariantDTO }
+                    const weight = anyItem.variant?.weight ?? 0 // grams
+                    const quantity = item.quantity || 1
+                    return sum + (weight * quantity) / 1000
+                  }, 0) || undefined,
+              },
+            ]
+    } catch {
+      // Last-resort: a single piece without weight (DHL may reject, but keeps legacy path working)
+      pieces = [{ parcelType: selectedParcelType, quantity: 1 }]
+    }
 
     if (input.debug) {
       console.log(`Pieces : ${JSON.stringify(pieces, null, 2)}`)

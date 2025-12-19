@@ -63,6 +63,13 @@ export type ParcelTypeConfig = {
   max_weight_kg: number
 }
 
+export type PackageConstraints = {
+  /** Package (piece) weight in kg */
+  weight_kg: number
+  /** Optional package dimensions (cm). When omitted, dimension validation is skipped. */
+  dimensions_cm?: { length: number; width: number; height: number }
+}
+
 /**
  * Get available fulfillment options from DHL eCommerce for a single route
  *
@@ -204,6 +211,71 @@ export function getParcelTypesForProduct(
       min_weight_kg: opt.min_weight_kg,
       max_weight_kg: opt.max_weight_kg,
     }))
+}
+
+function sort3(a: number, b: number, c: number): [number, number, number] {
+  const s = [a, b, c].sort((x, y) => x - y)
+  return [s[0], s[1], s[2]]
+}
+
+function dimsFit(
+  capDims: { maxLengthCm: number; maxWidthCm: number; maxHeightCm: number } | undefined,
+  pkgDims: { length: number; width: number; height: number } | undefined,
+): boolean {
+  if (!capDims || !pkgDims) return true
+  const cap = sort3(capDims.maxLengthCm, capDims.maxWidthCm, capDims.maxHeightCm)
+  const pkg = sort3(pkgDims.length, pkgDims.width, pkgDims.height)
+  return pkg[0] <= cap[0] && pkg[1] <= cap[1] && pkg[2] <= cap[2]
+}
+
+/**
+ * Select a parcel type key from DHL capabilities that can handle the given packages.
+ *
+ * Rules:
+ * - Weight constraints are validated against the *heaviest* package (piece), since DHL parcel types apply per piece.
+ * - Dimension constraints (when present in capabilities and provided by caller) are validated against the *largest* package dims.
+ * - If no parcel type satisfies constraints, returns undefined (caller can soft-fallback).
+ */
+export function selectParcelTypeForPackagesFromCapabilities(
+  capabilities: DHLCapabilitiesResponse,
+  productKey: string | undefined,
+  packages: PackageConstraints[],
+): string | undefined {
+  if (!capabilities?.length) return undefined
+  if (!packages?.length) return undefined
+
+  const relevant = productKey
+    ? capabilities.filter((c) => c.product.key === productKey)
+    : capabilities
+  if (!relevant.length) return undefined
+
+  const maxWeightKg = Math.max(...packages.map((p) => p.weight_kg || 0))
+
+  // If any package has dimensions, enforce dims against the “max dims” package.
+  const packagesWithDims = packages.filter((p) => p.dimensions_cm)
+  const maxDims =
+    packagesWithDims.length > 0
+      ? {
+          length: Math.max(...packagesWithDims.map((p) => p.dimensions_cm!.length)),
+          width: Math.max(...packagesWithDims.map((p) => p.dimensions_cm!.width)),
+          height: Math.max(...packagesWithDims.map((p) => p.dimensions_cm!.height)),
+        }
+      : undefined
+
+  // Find smallest suitable parcel type by maxWeightKg (ascending)
+  const sorted = [...relevant].sort((a, b) => a.parcelType.maxWeightKg - b.parcelType.maxWeightKg)
+
+  const suitable = sorted.find((c: DHLCapability) => {
+    const minW = c.parcelType.minWeightKg
+    const maxW = c.parcelType.maxWeightKg
+    if (typeof maxWeightKg === 'number' && maxWeightKg > 0) {
+      if (maxWeightKg < minW || maxWeightKg > maxW) return false
+    }
+    if (!dimsFit(c.parcelType.dimensions, maxDims)) return false
+    return true
+  })
+
+  return suitable?.parcelType?.key
 }
 
 /**

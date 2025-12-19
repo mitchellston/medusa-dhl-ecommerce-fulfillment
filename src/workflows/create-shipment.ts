@@ -19,8 +19,7 @@ import { Modules } from '@medusajs/framework/utils'
 import { DHLClient } from '../dhl-api/client'
 import { createFulfillment, CreateFulfillmentInput } from '../dhl-api/create-fulfillment'
 import { DHLCreateLabelResponse } from '../dhl-api/types'
-import getCredentialsWorkflow from './get-credentials'
-import { selectBoxForItems } from '../providers/dhl/box-selection'
+import { selectOptimalParcelType } from '../dhl-api/get-fulfillment-options'
 
 type WorkflowInput = {
   userId: string
@@ -144,10 +143,59 @@ const createDhlShipment = createStep(
     // (Note: in the provider flow we use `data.product_key`; this workflow is legacy and uses `carrier_code`.)
     const dhlProduct = shippingOption.data?.carrier_code?.toString() || 'DOOR'
 
-    // Load DHL settings to access configured boxes, then select parcelType dynamically.
-    const { result: settings } = await getCredentialsWorkflow(container).run({ input: {} })
-    const { selectedBox } = selectBoxForItems(input.items as unknown[], settings?.boxes ?? [])
-    const selectedParcelType = selectedBox?.dhl_parcel_type ?? 'SMALL'
+    // Determine parcel type from DHL capabilities + total shipment weight (never from a manually configured value).
+    let selectedParcelType = 'SMALL'
+    let client: DHLClient | undefined
+    try {
+      const toCountry = (recipient.country_code || '').toString().toUpperCase()
+      const fromCountry = location.address.country_code.toUpperCase()
+      const toBusiness = Boolean(
+        (shippingOption.data as Record<string, unknown> | undefined)?.to_business,
+      )
+
+      // Create DHL client (needed to fetch capabilities)
+      client = new DHLClient({
+        userId: input.userId,
+        key: input.apiKey,
+        accountId: input.accountId,
+      })
+
+      const capabilities = await client.getCapabilities(fromCountry, toCountry, toBusiness)
+
+      const totalWeightGrams = input.items.reduce<number>((sum, item) => {
+        const anyItem = item as FulfillmentItemDTO & { variant?: ProductVariantDTO }
+        const weight = anyItem.variant?.weight ?? 0 // grams
+        const quantity = item.quantity || 1
+        return sum + weight * quantity
+      }, 0)
+      const totalWeightKg = totalWeightGrams / 1000
+
+      const parcelTypes = capabilities
+        .filter((c) => c.product.key === dhlProduct)
+        .map((c) => ({
+          key: c.parcelType.key,
+          min_weight_kg: c.parcelType.minWeightKg,
+          max_weight_kg: c.parcelType.maxWeightKg,
+        }))
+
+      const optimal =
+        parcelTypes.length > 0 ? selectOptimalParcelType(parcelTypes, totalWeightKg) : undefined
+
+      selectedParcelType =
+        optimal ??
+        capabilities.find((c) => c.product.key === dhlProduct)?.parcelType.key ??
+        capabilities[0]?.parcelType.key ??
+        'SMALL'
+    } catch {
+      // keep default SMALL if capabilities fail
+    }
+    if (!client) {
+      client = new DHLClient({
+        userId: input.userId,
+        key: input.apiKey,
+        accountId: input.accountId,
+      })
+    }
 
     // Build pieces from order items
     const pieces: CreateFulfillmentInput['pieces'] = input.items.map(
@@ -207,13 +255,6 @@ const createDhlShipment = createStep(
     if (input.debug) {
       console.log(`DHL Fulfillment Input : ${JSON.stringify(fulfillmentInput, null, 2)}`)
     }
-
-    // Create DHL client
-    const client = new DHLClient({
-      userId: input.userId,
-      key: input.apiKey,
-      accountId: input.accountId,
-    })
 
     // Create the shipment
     const shipment = await createFulfillment(client, fulfillmentInput)

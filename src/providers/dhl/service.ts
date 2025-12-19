@@ -10,6 +10,7 @@ import {
   Logger,
 } from '@medusajs/framework/types'
 import { DHLClient } from '../../dhl-api/client'
+import { DHLCapabilitiesResponse } from '../../dhl-api/types'
 import {
   getFulfillmentOptions as getRouteFulfillmentOptions,
   getParcelTypesForProduct,
@@ -24,6 +25,41 @@ import { selectBoxForItems } from './box-selection'
 
 type InjectedDependencies = {
   logger: Logger
+}
+
+const DHL_CAPABILITIES_CACHE_TTL_MS = 60_000
+const dhlCapabilitiesCache = new Map<
+  string,
+  { expires_at: number; capabilities: DHLCapabilitiesResponse }
+>()
+
+type WeightableLineItem = {
+  quantity?: number
+  variant?: { weight?: number }
+  product?: { weight?: number }
+}
+
+type WeightableItem = WeightableLineItem & {
+  line_item?: WeightableLineItem
+}
+
+function toMinorUnits(amount: number, currency?: string): number {
+  const cur = (currency ?? 'EUR').toUpperCase()
+  // Most currencies we care about here are 2-decimal (EUR). Add more if needed.
+  const factor = cur === 'JPY' || cur === 'KRW' ? 1 : 100
+  return Math.round(Number(amount) * factor)
+}
+
+function getItemWeightGrams(item: unknown): number {
+  const it = item as Partial<WeightableItem>
+  const weight =
+    it.variant?.weight ??
+    it.product?.weight ??
+    it.line_item?.variant?.weight ??
+    it.line_item?.product?.weight ??
+    0
+  const quantity = it.quantity ?? it.line_item?.quantity ?? 1
+  return Number(weight || 0) * Number(quantity || 1)
 }
 
 type Options = {
@@ -168,9 +204,7 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
       throw new Error('Missing shipping address country code in context')
     }
 
-    // DHL eCommerce doesn't have a public rate API
-    // Return the price set in the shipping option configuration
-    // Or implement custom pricing logic based on weight/destination
+    // If you configured a fixed price for this option, keep honoring it.
     const configuredPrice = optionData?.price ?? data?.price
 
     if (typeof configuredPrice === 'number') {
@@ -180,9 +214,110 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
       }
     }
 
-    // If no configured price, log warning and return 0
-    if (credentials.enable_logs) {
-      this.logger_.warn('DHL: No price configured for shipping option, returning 0')
+    // Dynamic price: fetch DHL capabilities (which include pricing) for the cart destination.
+    try {
+      const client = await this.createClient()
+
+      const toCountry = String(context.shipping_address.country_code).toUpperCase()
+      const fromCountry = 'NL'
+      const optionDataRec = (optionData ?? {}) as Record<string, unknown>
+      const dataRec = (data ?? {}) as Record<string, unknown>
+      const toBusiness = Boolean(
+        (optionDataRec['to_business'] ?? dataRec['to_business']) as unknown,
+      )
+
+      const cacheKey = `${fromCountry}__${toCountry}__${toBusiness}`
+      const now = Date.now()
+      const cached = dhlCapabilitiesCache.get(cacheKey)
+      const capabilities =
+        cached && cached.expires_at > now
+          ? cached.capabilities
+          : await client.getCapabilities(fromCountry, toCountry, toBusiness)
+
+      if (!cached || cached.expires_at <= now) {
+        dhlCapabilitiesCache.set(cacheKey, {
+          expires_at: now + DHL_CAPABILITIES_CACHE_TTL_MS,
+          capabilities,
+        })
+      }
+
+      if (!capabilities || capabilities.length === 0) {
+        throw new Error(`No DHL capabilities returned for route ${fromCountry}→${toCountry}`)
+      }
+
+      // Product selection: prefer DOOR (home delivery), fallback to first available.
+      const explicitProductKey =
+        (dataRec['product_key'] as string | undefined) ??
+        (optionDataRec['product_key'] as string | undefined) ??
+        undefined
+      const door = capabilities.find((c) => c.product.key === 'DOOR')?.product.key
+      const productKey = explicitProductKey ?? door ?? capabilities[0]?.product.key
+
+      // Parcel type is derived from DHL capabilities + cart weight (never from a manually-configured box parcel type).
+      const rawItems = (context.items ?? []) as unknown[]
+      const totalWeightGrams = rawItems.reduce<number>(
+        (sum, item) => sum + getItemWeightGrams(item),
+        0,
+      )
+      const totalWeightKg = totalWeightGrams / 1000
+
+      let parcelType: string | undefined
+
+      if (productKey && totalWeightKg > 0) {
+        const parcelTypes = capabilities
+          .filter((c) => c.product.key === productKey)
+          .map((c) => ({
+            key: c.parcelType.key,
+            min_weight_kg: c.parcelType.minWeightKg,
+            max_weight_kg: c.parcelType.maxWeightKg,
+          }))
+
+        const optimalParcelType = selectOptimalParcelType(parcelTypes, totalWeightKg)
+        if (optimalParcelType) {
+          parcelType = optimalParcelType
+        }
+      }
+
+      // Fallback to the first parcel type DHL returned for this product/route.
+      if (!parcelType) {
+        parcelType =
+          capabilities.find((c) => c.product.key === productKey)?.parcelType.key ??
+          capabilities[0]?.parcelType.key ??
+          'SMALL'
+      }
+
+      const matched =
+        capabilities.find((c) => c.product.key === productKey && c.parcelType.key === parcelType) ??
+        capabilities.find((c) => c.parcelType.key === parcelType) ??
+        capabilities[0]
+
+      const withTax = matched?.parcelType?.price?.withTax
+      const withoutTax = matched?.parcelType?.price?.withoutTax
+      const currency = matched?.parcelType?.price?.currency ?? 'EUR'
+
+      const amount =
+        typeof withTax === 'number'
+          ? withTax
+          : typeof withoutTax === 'number'
+            ? withoutTax
+            : undefined
+
+      if (typeof amount !== 'number') {
+        throw new Error(
+          `Missing DHL price for product=${matched?.product?.key ?? 'n/a'} parcelType=${matched?.parcelType?.key ?? 'n/a'}`,
+        )
+      }
+
+      return {
+        calculated_amount: toMinorUnits(amount, currency),
+        is_calculated_price_tax_inclusive: typeof withTax === 'number',
+      }
+    } catch (e) {
+      if (credentials.enable_logs) {
+        this.logger_.warn(
+          `DHL: Failed to calculate dynamic price, returning 0. ${e instanceof Error ? e.message : String(e)}`,
+        )
+      }
     }
 
     return {
@@ -301,16 +436,15 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
       const door = routeOptions.find((o) => o.product_key === 'DOOR')?.product_key
       const productKey = explicitProductKey ?? door ?? routeOptions[0]?.product_key
 
-      // Parcel type is selected dynamically based on configured boxes + cart/order contents.
+      // We still select a box for packing/visibility, but parcel type is derived from DHL route options + weight.
       const { selectedBox, used_fallback_largest } = selectBoxForItems(
         items as unknown[],
         credentials.boxes ?? [],
       )
-
-      let parcelType = selectedBox?.dhl_parcel_type
+      let parcelType: string | undefined
 
       if (!parcelType) {
-        // Fallback to previous behavior (weight-based) if boxes not configured or no match.
+        // Primary selection is weight-based using DHL's parcelType min/max.
         if (productKey && totalWeightKg > 0) {
           const parcelTypes = getParcelTypesForProduct(routeOptions, productKey)
 
@@ -323,16 +457,22 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
         }
       }
 
-      // Final fallback to SMALL if no parcel type determined
+      // If still no parcel type, fall back to the first parcel type DHL returned for this product/route.
       if (!parcelType) {
-        parcelType = 'SMALL'
+        parcelType =
+          routeOptions.find((o) => o.product_key === productKey)?.parcel_type ??
+          routeOptions[0]?.parcel_type ??
+          'SMALL'
+      }
+
+      // Final guard: ensure the selected parcelType exists in DHL's route options.
+      if (!routeOptions.some((o) => o.product_key === productKey && o.parcel_type === parcelType)) {
+        parcelType = routeOptions[0]?.parcel_type ?? 'SMALL'
       }
 
       if (credentials.enable_logs) {
         const boxMsg = selectedBox
-          ? `box '${selectedBox.name || selectedBox.id}' → parcelType '${selectedBox.dhl_parcel_type}'${
-              used_fallback_largest ? ' (fallback: largest box)' : ''
-            }`
+          ? `box '${selectedBox.name || selectedBox.id}'${used_fallback_largest ? ' (fallback: largest box)' : ''}`
           : 'no box selected'
         this.logger_.info(
           `DHL: Selected parcel type '${parcelType}' (toCountry=${toCountry}, product '${productKey ?? 'n/a'}', toBusiness=${toBusiness}, ${boxMsg})`,
@@ -440,6 +580,13 @@ class DhlProviderService extends AbstractFulfillmentProviderService {
           label_id: response.labelId,
           tracker_code: response.trackerCode,
           parcel_type: response.parcelType,
+          selected_box: selectedBox
+            ? {
+                id: selectedBox.id,
+                name: selectedBox.name,
+                used_fallback_largest,
+              }
+            : undefined,
           piece_number: response.pieceNumber,
           routing_code: response.routingCode,
         },

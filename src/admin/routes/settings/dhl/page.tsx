@@ -9,7 +9,6 @@ type BoxForm = {
   name: string
   inner_cm: { length: number; width: number; height: number }
   max_weight_kg?: number
-  dhl_parcel_type: string
 }
 
 const initialState = {
@@ -90,7 +89,6 @@ const DHLSettingsPageInner = () => {
           id,
           name: '',
           inner_cm: { length: 0, width: 0, height: 0 },
-          dhl_parcel_type: 'SMALL',
         },
       ],
     }))
@@ -275,8 +273,9 @@ const DHLSettingsPageInner = () => {
             </button>
           </div>
           <p className={cx(hintClass, 'mb-2 mt-1')}>
-            Define your packaging. The fulfillment flow will choose the smallest fitting box and use
-            its DHL parcel type.
+            Define your packaging. The fulfillment flow will choose the smallest fitting box for
+            packing/visibility. DHL parcel type is derived from DHL capabilities + weight (not
+            configured manually).
           </p>
 
           <div className="flex flex-col gap-y-4">
@@ -308,18 +307,6 @@ const DHLSettingsPageInner = () => {
                         value={box.name}
                         onChange={(e) => updateBox(idx, { name: e.target.value })}
                       />
-                    </div>
-                    <div>
-                      <span className={labelClass}>DHL parcel type</span>
-                      <input
-                        className={inputClass}
-                        value={box.dhl_parcel_type}
-                        onChange={(e) => updateBox(idx, { dhl_parcel_type: e.target.value })}
-                      />
-                      <p className={cx(hintClass, 'mt-1 block')}>
-                        Example: <code>SMALL</code>, <code>MEDIUM</code>, <code>LARGE</code> (must
-                        match DHL capabilities).
-                      </p>
                     </div>
                     <div>
                       <span className={labelClass}>Max weight (kg) (optional)</span>

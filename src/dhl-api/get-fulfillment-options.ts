@@ -34,11 +34,23 @@ export type FulfillmentOption = {
   parcel_type: string
   min_weight_kg: number
   max_weight_kg: number
+  price?: {
+    with_tax?: number
+    without_tax?: number
+    vat_rate?: number
+    currency?: string
+  }
   supported_countries: string[]
   options: {
     key: string
     description: string
     input_type?: string
+    price?: {
+      with_tax?: number
+      without_tax?: number
+      vat_rate?: number
+      currency?: string
+    }
   }[]
 }
 
@@ -124,11 +136,27 @@ export async function getAllFulfillmentOptions(
           parcel_type: capability.parcelType.key,
           min_weight_kg: capability.parcelType.minWeightKg,
           max_weight_kg: capability.parcelType.maxWeightKg,
+          price: capability.parcelType.price
+            ? {
+                with_tax: capability.parcelType.price.withTax,
+                without_tax: capability.parcelType.price.withoutTax,
+                vat_rate: capability.parcelType.price.vatRate,
+                currency: capability.parcelType.price.currency,
+              }
+            : undefined,
           supported_countries: [toCountry],
           options: capability.options.map((opt) => ({
             key: opt.key,
             description: opt.description,
             input_type: opt.inputType,
+            price: opt.price
+              ? {
+                  with_tax: opt.price.withTax,
+                  without_tax: opt.price.withoutTax,
+                  vat_rate: opt.price.vatRate,
+                  currency: opt.price.currency,
+                }
+              : undefined,
           })),
         })
       }
@@ -193,11 +221,27 @@ function mapCapabilitiesToFulfillmentOptions(
     parcel_type: capability.parcelType.key,
     min_weight_kg: capability.parcelType.minWeightKg,
     max_weight_kg: capability.parcelType.maxWeightKg,
+    price: capability.parcelType.price
+      ? {
+          with_tax: capability.parcelType.price.withTax,
+          without_tax: capability.parcelType.price.withoutTax,
+          vat_rate: capability.parcelType.price.vatRate,
+          currency: capability.parcelType.price.currency,
+        }
+      : undefined,
     supported_countries: supportedCountries,
     options: capability.options.map((opt) => ({
       key: opt.key,
       description: opt.description,
       input_type: opt.inputType,
+      price: opt.price
+        ? {
+            with_tax: opt.price.withTax,
+            without_tax: opt.price.withoutTax,
+            vat_rate: opt.price.vatRate,
+            currency: opt.price.currency,
+          }
+        : undefined,
     })),
   }))
 }

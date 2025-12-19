@@ -108,12 +108,24 @@ export type DHLCapability = {
       maxWidthCm: number
       maxHeightCm: number
     }
+    price?: {
+      withTax?: number
+      withoutTax?: number
+      vatRate?: number
+      currency?: string
+    }
   }
   options: {
     key: string
     description: string
     rank: number
     code: string
+    price?: {
+      withTax?: number
+      withoutTax?: number
+      vatRate?: number
+      currency?: string
+    }
     inputType?: string
     inputMax?: number
     exclusions?: string[]

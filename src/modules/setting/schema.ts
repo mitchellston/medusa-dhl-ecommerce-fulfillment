@@ -9,7 +9,6 @@ export const DhlBoxSchema = z.object({
     height: z.number().positive(),
   }),
   max_weight_kg: z.number().positive().optional(),
-  dhl_parcel_type: z.string().min(1).max(100),
 })
 
 export type DhlBox = z.infer<typeof DhlBoxSchema>

@@ -7,6 +7,7 @@ type FulfillmentLabelType = {
   label_url?: string
   tracking_number?: string
   tracking_url?: string
+  parcel_type?: string
 }
 
 type FulfillmentType = {
@@ -35,6 +36,7 @@ const DHLWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
           trackingNumber: label.tracking_number,
           trackingUrl: label.tracking_url,
           labelUrl: label.label_url,
+          parcelType: label.parcel_type,
         })),
     }))
     .filter((f) => f.labels.length > 0)
@@ -65,35 +67,51 @@ const DHLWidget = ({ data }: DetailWidgetProps<AdminOrder>) => {
             </div>
           )}
           {fulfillment.labels.map((info, idx) => (
-            <div key={idx} className="text-ui-fg-subtle grid grid-cols-2 items-start py-2">
-              <p className="font-medium font-sans txt-compact-small">Tracking</p>
-              <p className="font-normal font-sans txt-compact-small">
-                {info.trackingNumber ? (
-                  info.trackingUrl ? (
-                    <a
-                      href={info.trackingUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
-                    >
-                      {info.trackingNumber}
-                    </a>
+            <div
+              key={idx}
+              className={`${idx > 0 ? 'border-t border-ui-border-base pt-4' : ''} space-y-2 py-2`}
+            >
+              <div className="text-ui-fg-subtle grid grid-cols-2 items-start">
+                <p className="font-medium font-sans txt-compact-small">Parcel Type</p>
+                <p className="font-normal font-sans txt-compact-small">
+                  {info.parcelType || 'N/A'}
+                </p>
+              </div>
+              <div className="text-ui-fg-subtle grid grid-cols-2 items-start">
+                <p className="font-medium font-sans txt-compact-small">Tracking Number</p>
+                <p className="font-normal font-sans txt-compact-small">
+                  {info.trackingNumber ? (
+                    info.trackingUrl ? (
+                      <a
+                        href={info.trackingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {info.trackingNumber}
+                      </a>
+                    ) : (
+                      info.trackingNumber
+                    )
                   ) : (
-                    info.trackingNumber
-                  )
-                ) : (
-                  'N/A'
-                )}{' '}
-                <a
-                  href={`data:application/pdf;base64,${info.labelUrl}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline"
-                  download={`label-${info.trackingNumber || idx}.pdf`}
-                >
-                  Download Label
-                </a>
-              </p>
+                    'N/A'
+                  )}
+                </p>
+              </div>
+              <div className="text-ui-fg-subtle grid grid-cols-2 items-start">
+                <p className="font-medium font-sans txt-compact-small">Label</p>
+                <p className="font-normal font-sans txt-compact-small">
+                  <a
+                    href={`data:application/pdf;base64,${info.labelUrl}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                    download={`label-${info.trackingNumber || idx}.pdf`}
+                  >
+                    Download PDF
+                  </a>
+                </p>
+              </div>
             </div>
           ))}
         </div>

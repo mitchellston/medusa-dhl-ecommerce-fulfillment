@@ -310,6 +310,7 @@ const createShipmentWorkflow = createWorkflow(
           tracking_url: label.trackingUrl,
           label_url: label.label,
           tracking_number: label.trackingNumber,
+          parcel_type: label.parcelType,
         })),
         data: {
           labels: data.labels,

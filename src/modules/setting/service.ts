@@ -1,42 +1,42 @@
-import { FedexSetting } from "./models/setting"
-import { MedusaService } from "@medusajs/framework/utils"
-import { SetupCredentialsInput } from "../../api/admin/fedex/route";
+import { DHLSetting } from './models/setting'
+import { MedusaService } from '@medusajs/framework/utils'
+import { SetupCredentialsInput } from '../../api/admin/dhl/route'
 
-class FedexSettingsModuleService extends MedusaService({
-  FedexSetting,
+class DHLSettingsModuleService extends MedusaService({
+  DHLSetting,
 }) {
   /**
-   * Updates the FedEx API credentials.
+   * Updates the DHL API credentials.
    * @param input The new credentials to set.
    * @returns True if the update was successful, false otherwise.
    */
   async updateCredentials(input: SetupCredentialsInput): Promise<boolean> {
-    const fedexSettings = await this.listFedexSettings();
-    if (fedexSettings.length) {
-      // Update the existing FedEx settings
-      const result = await this.updateFedexSettings({
+    const dhlSettings = await this.listDHLSettings()
+    if (dhlSettings.length) {
+      // Update the existing DHL settings
+      const result = await this.updateDHLSettings({
         ...input,
-        id: fedexSettings[0].id
-      });
-      return !!result;
+        id: dhlSettings[0].id,
+      })
+      return !!result
     } else {
-      // Create new FedEx settings
-      const result = await this.createFedexSettings(input);
-      return !!result;
+      // Create new DHL settings
+      const result = await this.createDHLSettings(input)
+      return !!result
     }
   }
 
   /**
-   * Retrieves the FedEx API credentials.
-   * @returns The FedEx API credentials or null if not found.
+   * Retrieves the DHL API credentials.
+   * @returns The DHL API credentials or null if not found.
    */
   async getCredentials(): Promise<SetupCredentialsInput | null> {
-    const fedexSettings = await this.listFedexSettings();
-    if (fedexSettings.length) {
-      return fedexSettings[0];
+    const dhlSettings = await this.listDHLSettings()
+    if (dhlSettings.length) {
+      return dhlSettings[0]
     }
-    return null;
+    return null
   }
 }
 
-export default FedexSettingsModuleService
+export default DHLSettingsModuleService

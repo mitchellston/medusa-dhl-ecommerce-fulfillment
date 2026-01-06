@@ -1,0 +1,79 @@
+import { Logger } from '@medusajs/framework/types'
+import { DHLAddress, DHLShipmentPiece, DHLShipmentResponse } from './types'
+import { Api } from './swagger/Api'
+
+/**
+ * Creates a DHL shipment by sending a request to the DHL API.
+ *
+ * @param baseUrl - The base URL of the DHL API.
+ * @param token - The Bearer token used for authentication with the DHL API.
+ * @param accountNumber - The DHL account number to be used for the shipment.
+ * @param shipper - The shipper details for the shipment, conforming to the DhlAddress type.
+ * @param receiver - The receiver details for the shipment, conforming to the DhlAddress type.
+ * @param pieces - An array of pieces to be shipped, each conforming to the DHLShipmentPiece type.
+ * @param logger - (Optional) Logger instance for logging debug and error information.
+ * @returns A promise that resolves to a DHLShipmentResponse object containing the tracking number, tracking URL, and labels.
+ * @throws Will throw an error if the DHL API request fails or returns a non-OK response.
+ */
+export const createShipment = async (
+  baseUrl: string,
+  token: string,
+  accountNumber: string,
+  shipmentId: string,
+  shipper: DHLAddress,
+  receiver: DHLAddress,
+  pieces: DHLShipmentPiece[],
+  fulfillmentOptionKey: string,
+  logger?: Logger | Console,
+): Promise<DHLShipmentResponse[]> => {
+  const api = new Api({
+    baseUrl: baseUrl,
+    baseApiParams: { headers: { Authorization: `Bearer ${token}` } },
+  })
+
+  const response = await api.shipments.createShipmentPublic({
+    accountId: accountNumber,
+    pieces: pieces,
+    receiver: receiver,
+    shipmentId: shipmentId,
+    shipper: shipper,
+    options: [{ key: fulfillmentOptionKey }],
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    if (logger) {
+      logger.error(`DHL create shipment failed [${response.status}]: ${text}`)
+    }
+    throw new Error(`DHL create shipment failed: ${response.statusText}`)
+  }
+  const result = response.data
+  if (logger) {
+    logger.log(`DHL create shipment response: ${JSON.stringify(result, null, 2)}`)
+  }
+
+  const labels: DHLShipmentResponse[] = []
+  for (const piece of result.pieces || []) {
+    if (!piece.labelId) {
+      continue
+    }
+
+    const label = await api.labels.getLabel(piece.labelId, {
+      format: 'blob',
+      headers: { Accept: 'application/pdf' },
+    })
+
+    const labelBlob = label.data as unknown as Blob
+    const arrayBuffer = await labelBlob.arrayBuffer()
+    const labelBase64 = Buffer.from(arrayBuffer).toString('base64')
+    labels.push({
+      label: labelBase64,
+      trackingNumber: piece.trackerCode ?? '',
+      trackingUrl: `https://www.dhlparcel.nl/nl/volg-uw-zending-0?tt=${piece.trackerCode}`,
+      parcelType: piece.parcelType,
+      pieceNumber: piece.pieceNumber,
+    })
+  }
+
+  return labels
+}

@@ -1,28 +1,31 @@
+# Build outputs
 /dist
-.env
-.DS_Store
-/uploads
-/node_modules
-yarn-error.log
+build
 
+# Dependencies
+/node_modules
+
+# Environment files
+.env
+
+# System files
+.DS_Store
+
+# IDE files
 .idea
 
-coverage
-
-!src/**
-
-./tsconfig.tsbuildinfo
-medusa-db.sql
-build
+# Cache files
 .cache
 
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
+# Test coverage
+coverage
 
+# Uploads and media
+/uploads
+
+# Generated files
+./tsconfig.tsbuildinfo
+src/dhl-api/swagger/Api.ts
+
+# Medusa specific
 .medusa
-yarn.lock
-package-lock.json

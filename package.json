@@ -1,16 +1,16 @@
 {
-  "name": "@igorppbr/medusa-v2-fedex-fulfillment",
-  "version": "1.0.4",
-  "description": "FedEx integration for Medusa V2",
-  "author": "Igor Ludgero Miura <igorlmiura@gmail.com>",
+  "name": "medusa-dhl-ecommerce-fulfillment",
+  "version": "1.0.5",
+  "description": "DHL eCommerce integration for Medusa V2",
+  "author": "mitchellston",
   "license": "MIT",
-  "homepage": "https://github.com/igorppbr/medusa-fedex-fulfillment#readme",
+  "homepage": "https://github.com/mitchellston/medusa-dhl-ecommerce-fulfillment#readme",
   "bugs": {
-    "url": "https://github.com/igorppbr/medusa-fedex-fulfillment/issues"
+    "url": "https://github.com/mitchellston/medusa-dhl-ecommerce-fulfillment/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/igorppbr/medusa-fedex-fulfillment.git"
+    "url": "git+https://github.com/mitchellston/medusa-dhl-ecommerce-fulfillment.git"
   },
   "files": [
     ".medusa/server"
@@ -40,14 +40,17 @@
     "medusa-plugin",
     "medusa-v2",
     "medusa-plugin-integration",
-    "fedex"
+    "dhl",
+    "dhl-ecommerce",
+    "fulfillment"
   ],
   "scripts": {
     "build": "medusa plugin:build",
     "dev": "medusa plugin:develop",
     "prepublishOnly": "medusa plugin:build",
     "lint": "npx eslint src",
-    "lint:fix": "npx eslint src --fix"
+    "lint:fix": "npx eslint src --fix",
+    "postinstall": "$(cd ./src/dhl-api/swagger; npx swagger-typescript-api generate --path ./swagger.json)"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
@@ -73,6 +76,7 @@
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "swagger-typescript-api": "^13.2.16",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.2",
     "typescript-eslint": "^8.44.0",
@@ -98,5 +102,5 @@
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "yarn@4.4.0+sha512.91d93b445d9284e7ed52931369bc89a663414e5582d00eea45c67ddc459a2582919eece27c412d6ffd1bd0793ff35399381cb229326b961798ce4f4cc60ddfdb"
+  "packageManager": "bun@1.2.9"
 }

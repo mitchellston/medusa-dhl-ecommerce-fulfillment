@@ -1,155 +1,115 @@
 <p align="center">
-  <a href="https://www.fedex.com">
-    <picture>
-      <img alt="FedEx logo" src="https://raw.githubusercontent.com/gil--/shipping_carrier_icons/refs/heads/main/svg/fedex.svg" width="200"/>
-    </picture>
+  <a href="https://www.dhlecommerce.nl/en">
+    <strong>DHL eCommerce</strong>
   </a>
 </p>
 <h1 align="center">
-  FedEx Fulfillment Integration
+  DHL eCommerce Fulfillment Integration
 </h1>
 
 <h4 align="center">
-  <a href="https://developer.fedex.com/api/en-us/home.html">Documentation</a> |
-  <a href="https://www.fedex.com/en-us/manage-account.html">Merchant Account Center</a>
+  <a href="https://www.dhl.com/global-en/home/our-divisions/ecommerce.html">DHL eCommerce</a> |
+  <a href="https://github.com/mitchellston/medusa-dhl-ecommerce-fulfillment">Repository</a>
 </h4>
-
-<p align="center">
-  <a href="https://github.com/medusajs/medusa/blob/master/CONTRIBUTING.md">
-    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat" alt="PRs welcome!" />
-  </a>
-  <a href="https://www.linkedin.com/in/igor-ludgero-miura-26175263/">
-    <img src="https://img.shields.io/badge/Follow%20on%20LinkedIn-blue?logo=linkedin" alt="Follow me on LinkedIn" />
-  </a>
-</p>
 
 ## Introduction
 
-The FedEx Fulfillment Integration allows you to seamlessly connect your Medusa store with FedEx's shipping and fulfillment services. This integration enables you to manage shipments, track packages, and streamline your order fulfillment process.
+The DHL eCommerce Fulfillment Integration allows you to connect your Medusa store with DHL eCommerce shipping and fulfillment services. This integration enables you to manage shipments, track packages, and streamline your order fulfillment process.
 
-With this plugin, you can integrate your Medusa store with FedEx to:
+With this plugin, you can integrate your Medusa store with DHL eCommerce to:
 
-- Retrieve real-time shipping rates from FedEx during checkout.
-- Create shipments and generate shipping labels with FedEx automatically when creating order shipments.
-- Streamline your fulfillment workflow by managing FedEx shipments directly from your Medusa admin or backend.
+- Create shipments and generate shipping labels automatically when creating order shipments.
+- Streamline your fulfillment workflow by managing DHL shipments directly from your Medusa admin or backend.
 
-This ensures accurate shipping costs for your customers and simplifies the process of fulfilling and tracking orders using FedEx services.
+This simplifies the process of fulfilling and tracking orders using DHL services.
 
 ## Compatibility
 
-This module/plugin is compatible with versions >= 2.4.0 of `@medusajs/medusa`. 
+This module/plugin is compatible with versions >= 2.4.0 of `@medusajs/medusa`.
 
 ## Getting Started
 
-To get started with the FedEx Fulfillment Integration, follow these steps:
+To get started with the DHL eCommerce Fulfillment Integration:
 
-1. **Create a FedEx Account**  
-  - Go to the [FedEx website](https://www.fedex.com/) and sign up for a merchant account.  
-  - You can use a production or a sandbox account for testing purposes.
+1. **Create a DHL eCommerce account**
 
-2. **Register as a Developer**  
-  - Visit the [FedEx Developer Portal](https://developer.fedex.com/api/en-us/home.html).  
-  - Log in with your FedEx account and register as a developer if you haven't already.
+- Sign up to <a href="https://my.dhlecommerce.nl/account/sign-in">DHL eCommerce</a>.
 
-3. **Create an Application**  
-  - In the Developer Portal, create a new application.  
-  - Choose the APIs you want to use (e.g., Shipping, Tracking, etc.).
+2. **Obtain API credentials**
 
-4. **Generate API Keys**  
-  - After creating your application, generate your API credentials:  
-    - **Client ID**  
-    - **Client Secret**  
-    - **Account Number**  
-  - For sandbox testing, use the sandbox credentials provided.
-  - **Important:** Save these credentials securely. You will need to use them later in your Medusa configuration.
+- This module needs a DHL eccomerce api key, user id and account id to function properly. You can follow the steps on <a href="https://api-gw.dhlparcel.nl/docs/guide/chapters/01-authentication-and-authorization.html">the official DHL eccommerce documentation</a> to get the required information.
 
-5. **Configure the Plugin**  
-  - Add your FedEx API credentials to your Medusa configuration as described in the plugin documentation.
+3. **Configure the plugin**
 
-6. **Test the Integration**  
-  - Use your sandbox credentials to test the integration before switching to production.
-
-For more details, refer to the [FedEx API Documentation](https://developer.fedex.com/api/en-us/home.html).
+- Add credentials via `medusa-config.ts` or set them in the Medusa Admin (**Settings → DHL**).
 
 ## Installation
-To install the FedEx Fulfillment Integration, follow these steps:
+
+To install the DHL eCommerce Fulfillment Integration, follow these steps:
 
 1. **Install the package**
 
-  ```bash
-  npm install @igorppbr/medusa-v2-fedex-fulfillment
-  ```
+```bash
+npm install medusa-dhl-ecommerce-fulfillment
+```
 
 2. **Add the module and plugin to your `medusa-config.ts`**
 
-  ```ts
-  modules: [
-    {
-     resolve: "@medusajs/medusa/fulfillment",
-     options: {
+```ts
+modules: [
+  {
+    resolve: '@medusajs/medusa/fulfillment',
+    options: {
       providers: [
         {
-         resolve: "@igorppbr/medusa-v2-fedex-fulfillment/providers/fedex",
-         id: "fedex",
-         options: {
-          isEnabled: true, // Enable or disable integration
-          clientId: "clientId", // FedEx Client ID
-          clientSecret: "clientSecret", // FedEx Client Secret
-          accountNumber: "accountNumber", // FedEx Account Number
-          isSandbox: true, // Enable sandbox mode for testing
-          enableLogs: true, // Enable logging
-          weightUnitOfMeasure: "LB" // Weight unit of measure
-         },
+          resolve: 'medusa-dhl-ecommerce-fulfillment/providers/dhl',
+          id: 'dhl',
+          options: {
+            isEnabled: true, // Enable or disable integration
+            userId: "<your-user-id>", // DHL User ID
+            apiKey: "<your-api-key>", // DHL API Key
+            accountId: "<your-account-id>", // DHL Account ID
+          },
         },
       ],
-     },
     },
-  ],
-  plugins: [
-    {
-     resolve: "@igorppbr/medusa-v2-fedex-fulfillment", // This is used to enable custom admin widgets to see the tracking URLs and labels
-     options: {},
-    }
-  ]
+  },
+],
+plugins: [
+  {
+    resolve: 'medusa-dhl-ecommerce-fulfillment', // This is used to enable custom admin widgets to see the tracking URLs and labels
+    options: {},
+  },
+]
 ```
 
 > **⚠️ Alternative:**  
-> **Alternatively, you can set up your FedEx API credentials directly in the Medusa Admin dashboard instead of the `medusa-config.ts` file.**  
-> Go to the **Settings** page in your Medusa Admin, and you will see **FedEx** listed in the menu.  
-> From there, you can enter your **Client ID**, **Client Secret**, and **Account Number** securely via the UI.
+> **Alternatively, you can set up your DHL API credentials directly in the Medusa Admin dashboard instead of the `medusa-config.ts` file.**  
+> Go to the **Settings** page in your Medusa Admin, and you will see **DHL** listed in the menu.  
+> From there, you can enter your **User ID**, **API Key**, and **Account ID** securely via the UI.
 
 <p align="center">
-  <img alt="FedEx Admin Settings" src="https://raw.githubusercontent.com/igorppbr/medusa-fedex-fulfillment/master/images/3.png" width="600"/>
+  <img alt="DHL Admin Settings" src="./images/3.png" width="600"/>
 </p>
 
 > **How credentials are used:**  
-> The module will first check for credentials stored in the database (set via the Admin UI). If these exist, they will be used for all FedEx API requests.  
+> The module will first check for credentials stored in the database (set via the Admin UI). If these exist, they will be used for all DHL API requests.  
 > If no credentials are found in the database, the module will fall back to the credentials provided in your `medusa-config.ts` file.
-
-> **⚠️ WARNING:**  
-> The FedEx sandbox environment is frequently unavailable or down. If you encounter issues during testing, this is likely the cause.  
-> Check your logs for error messages indicating that the FedEx service is unavailable.
-> For production use, ensure you switch to your production credentials and disable sandbox mode.
 
 ## Configuration
 
-### Configuring FedEx Shipping Options
+### Configuring DHL Shipping Options
 
-After installing the integration, you need to configure the FedEx shipping options in your Medusa Admin dashboard.
+After installing the integration, you need to configure the DHL shipping options in your Medusa Admin dashboard.
 
 #### 1. Enable Desired Shipping Options
 
-Decide which FedEx shipping services you want to offer to your customers.
+Decide which DHL shipping option and carrier you want to offer to your customers.
 
-#### 2. Add a Calculated Shipping Option
+#### 2. Select DHL as Fulfillment Provider
 
-- Go to **Locations & Shipping** in the Medusa Admin dashboard.
-- Create a new shipping option and set the type to **Calculated**. This ensures shipping costs are retrieved directly from the FedEx API.
-
-#### 3. Select FedEx as Fulfillment Provider
-
-- In the shipping option settings, set **Fulfillment Provider** to **FedEx**.
-- Under **Fulfillment Option**, select the specific FedEx service you want to make available (e.g., FedEx Ground, FedEx Express).
+- In the shipping option settings, set **Fulfillment Provider** to **DHL**.
+- Under **Fulfillment Option**, select the specific DHL service you want to make available.
 
 <br/>
 
@@ -158,38 +118,39 @@ Decide which FedEx shipping services you want to offer to your customers.
 <br/>
 
 <p align="center">
-  <img alt="FedEx Shipping Option" src="https://raw.githubusercontent.com/igorppbr/medusa-fedex-fulfillment/master/images/1.png" width="600"/>
+  <img alt="DHL Shipping Option" src="./images/1.png" width="600"/>
 </p>
 
 <br/>
 
-> **Tip:** You can create multiple shipping options for different FedEx services to give your customers more choices at checkout.
+> **Tip:** You can create multiple shipping options for different DHL services to give your customers more choices at checkout.
 
 ## Generating Shipping Labels & Tracking
 
-When you create a shipment for an order in Medusa, the integration will **automatically generate a FedEx shipping label and tracking number**.
+When you create a shipment for an order in Medusa, the integration will **automatically generate a DHL shipping label and tracking number**.
 
-- The label cost is charged to your FedEx account.
+- The label cost is charged to your DHL account.
 - Shipping labels, tracking codes, and other relevant information are available in the Medusa Admin dashboard on the order view page.
 - You can **download the label PDF** and access the **tracking URL** directly from the order details.
 
 <br/>
 
 <p align="center">
-  <img alt="FedEx Shipping Label" src="https://raw.githubusercontent.com/igorppbr/medusa-fedex-fulfillment/master/images/2.png" width="600"/>
+  <img alt="DHL Shipping Label" src="./images/2.png" width="600"/>
 </p>
 
 <br/>
 
 ## Contributing
 
-We welcome contributions to the FedEx Fulfillment Integration! If you have suggestions, improvements, or bug fixes, please follow these steps:
+We welcome contributions to the DHL eCommerce Fulfillment Integration! If you have suggestions, improvements, or bug fixes, please follow these steps:
 
 1. **Fork the Repository**  
    Create a personal copy of the repository by forking it on GitHub.
 
 2. **Create a New Branch**  
    Create a new branch for your changes:
+
    ```bash
    git checkout -b my-feature-branch
    ```
@@ -203,9 +164,6 @@ We welcome contributions to the FedEx Fulfillment Integration! If you have sugge
 5. **Submit a Pull Request**  
    Push your changes to your forked repository and submit a pull request to the main repository.
 
-## Support / Contact
+## Credits
 
-If you need help or have questions about the FedEx Fulfillment Integration, please reach out to us:
-
-- **Email:** igorlmiura@gmail.com
-- **GitHub Issues:** [Submit an issue](https://github.com/igorppbr/medusa-fedex-fulfillment/issues)
+This project was a fork of <a href="https://github.com/mitchellston/medusa-dhl-ecommerce-fulfillment">igorppbr/medusa-fedex-fulfillment</a>. If you need Fedex integration in Medusa, please check their original repo out.

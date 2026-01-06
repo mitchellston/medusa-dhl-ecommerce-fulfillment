@@ -3,11 +3,11 @@ import {
   createWorkflow,
   StepResponse,
   WorkflowResponse,
-} from "@medusajs/framework/workflows-sdk";
+} from '@medusajs/framework/workflows-sdk'
 
-import { FEDEX_SETTINGS_MODULE } from "../modules/setting";
-import { SetupCredentialsInput, SetupCredentialsResponse } from "../api/admin/fedex/route";
-import FedexSettingsModuleService from "../modules/setting/service";
+import { DHL_SETTINGS_MODULE } from '../modules/setting'
+import { SetupCredentialsInput, SetupCredentialsResponse } from '../api/admin/dhl/route'
+import DHLSettingsModuleService from '../modules/setting/service'
 
 /**
  * Save credentials in the database
@@ -15,31 +15,28 @@ import FedexSettingsModuleService from "../modules/setting/service";
  * @returns True if the credentials were saved successfully, false otherwise.
  */
 const saveCredentials = createStep(
-  "save-fedex-credentials",
-  async (
-    input: SetupCredentialsInput,
-    { container }
-  ): Promise<StepResponse<boolean>> => {
-    const fedexSettingService: FedexSettingsModuleService = container.resolve(FEDEX_SETTINGS_MODULE)
-    const result = await fedexSettingService.updateCredentials(input);
-    return new StepResponse(result);
-  }
-);
+  'save-dhl-credentials',
+  async (input: SetupCredentialsInput, { container }): Promise<StepResponse<boolean>> => {
+    const dhlSettingService: DHLSettingsModuleService = container.resolve(DHL_SETTINGS_MODULE)
+    const result = await dhlSettingService.updateCredentials(input)
+    return new StepResponse(result)
+  },
+)
 
 /**
- * Sets up the FedEx API credentials.
+ * Sets up the DHL API credentials.
  * @param input The credentials to set up.
  * @returns The result of the setup process.
  */
 const setupCredentialsWorkflow = createWorkflow(
-  "setup-fedex-credentials",
+  'setup-dhl-credentials',
   (input: SetupCredentialsInput): WorkflowResponse<SetupCredentialsResponse> => {
-    const success = saveCredentials(input);
+    const success = saveCredentials(input)
     return new WorkflowResponse({
       success,
-      input
-    });
-  }
+      input,
+    })
+  },
 )
 
-export default setupCredentialsWorkflow;
+export default setupCredentialsWorkflow

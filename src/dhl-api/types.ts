@@ -8,6 +8,24 @@ export type DHLShipmentPiece = Parameters<
   InstanceType<typeof Api>['shipments']['createShipmentPublic']
 >[0]['pieces'][number]
 
+export type DHLShipmentStatusResponse = Awaited<
+  ReturnType<InstanceType<typeof Api>['trackTrace']['getTrackAndTrace']>
+>['data'][number]
+
+export type DHLShipmentStatusEvent =
+  | 'CUSTOMS'
+  | 'DATA RECEIVED'
+  | 'DATA_RECEIVED'
+  | 'DELIVERED'
+  | 'EXCEPTION'
+  | 'INTERVENTION'
+  | 'IN DELIVERY'
+  | 'IN_DELIVERY'
+  | 'LEG'
+  | 'PROBLEM'
+  | 'UNDERWAY'
+  | 'UNKNOWN'
+
 export type DHLShipmentResponse = {
   trackingNumber: string
   trackingUrl: string
@@ -39,3 +57,7 @@ export type MedusaItemDimensions = {
   length: number
   quantity: number
 }
+
+export type DHLWebhookEventBody = Awaited<
+  ReturnType<InstanceType<typeof Api>['your']['postYourEndpoint']>
+>['data']

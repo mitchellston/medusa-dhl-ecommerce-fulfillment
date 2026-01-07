@@ -260,8 +260,6 @@ const createDHLShipment = createStep(
       }
     })
 
-    console.log(input.items)
-
     if (input.debug && input._logger) {
       input._logger?.log(`Order Items dimensions: ${JSON.stringify(itemDimensions, null, 2)}`)
     }

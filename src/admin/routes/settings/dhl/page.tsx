@@ -12,6 +12,8 @@ const initialState = {
   enable_logs: false,
   item_dimensions_unit: 'mm' as 'mm' | 'cm',
   item_weight_unit: 'g' as 'g' | 'kg',
+  webhook_api_key: '' as string | null,
+  webhook_api_key_header: 'Authorization',
 }
 
 const queryClient = new QueryClient()
@@ -241,6 +243,51 @@ const DHLSettingsPageInner = () => {
               <Select.Item value="kg">Kilograms (kg)</Select.Item>
             </Select.Content>
           </Select>
+        </div>
+
+        <div className="border-t pt-6 mt-2">
+          <h3 className="font-semibold mb-4">Webhook Settings (Track &amp; Trace Pusher)</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Configure these settings to receive real-time shipment status updates from DHL via
+            webhooks. The API key will be used to authenticate incoming webhook requests.
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="webhook_api_key">Webhook API Key</Label>
+          <Hint className="mt-1 block pb-1">
+            The API key provided by DHL for authenticating webhook requests. This should be at least
+            50 characters long.
+          </Hint>
+          <Input
+            id="webhook_api_key"
+            name="webhook_api_key"
+            type="password"
+            className="mt-1"
+            autoComplete="off"
+            value={form.webhook_api_key ?? ''}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                webhook_api_key: e.target.value || null,
+              }))
+            }
+          />
+        </div>
+        <div>
+          <Label htmlFor="webhook_api_key_header">Webhook API Key Header</Label>
+          <Hint className="mt-1 block pb-1">
+            The HTTP header name that DHL uses to send the API key. Default is
+            &quot;Authorization&quot;.
+          </Hint>
+          <Input
+            id="webhook_api_key_header"
+            name="webhook_api_key_header"
+            className="mt-1"
+            autoComplete="off"
+            value={form.webhook_api_key_header}
+            onChange={handleChange}
+          />
         </div>
         <Button type="button" onClick={handleSave} disabled={!isValid} className="mt-4 w-fit">
           Save

@@ -29,6 +29,10 @@ type Options = {
   apiKey: string
   accountId: string
   enableLogs: boolean
+  itemDimensionsUnit?: 'mm' | 'cm'
+  itemWeightUnit?: 'g' | 'kg'
+  webhookApiKey?: string
+  webhookApiKeyHeader?: string
 }
 
 class DHLProviderService extends AbstractFulfillmentProviderService {
@@ -69,8 +73,10 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
         account_id: this.options_.accountId,
         enable_logs: this.options_.enableLogs,
         is_enabled: this.options_.isEnabled,
-        item_dimensions_unit: 'mm',
-        item_weight_unit: 'g',
+        item_dimensions_unit: this.options_.itemDimensionsUnit ?? 'mm',
+        item_weight_unit: this.options_.itemWeightUnit ?? 'g',
+        webhook_api_key: this.options_.webhookApiKey,
+        webhook_api_key_header: this.options_.webhookApiKeyHeader ?? 'Authorization',
       }
     }
 

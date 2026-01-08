@@ -9,4 +9,6 @@ export const DHLSetting = model.define('dhl_setting', {
   enable_logs: model.boolean(),
   item_dimensions_unit: model.enum(['mm', 'cm']).default('mm'),
   item_weight_unit: model.enum(['g', 'kg']).default('g'),
+  webhook_api_key: model.text().nullable(),
+  webhook_api_key_header: model.text().default('Authorization'),
 })

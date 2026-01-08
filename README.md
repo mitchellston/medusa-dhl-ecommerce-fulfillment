@@ -69,6 +69,11 @@ modules: [
             userId: "<your-user-id>", // DHL User ID
             apiKey: "<your-api-key>", // DHL API Key
             accountId: "<your-account-id>", // DHL Account ID
+            enableLogs: false, // Enable debug logging (optional)
+            itemDimensionsUnit: "mm", // Unit for product dimensions: "mm" or "cm" (optional, default: "mm")
+            itemWeightUnit: "g", // Unit for product weight: "g" or "kg" (optional, default: "g")
+            webhookApiKey: "<your-webhook-api-key>", // DHL Track & Trace Pusher API key (optional)
+            webhookApiKeyHeader: "Authorization", // Header name for webhook auth (optional, default: "Authorization")
           },
         },
       ],
@@ -124,6 +129,45 @@ Decide which DHL shipping option and carrier you want to offer to your customers
 <br/>
 
 > **Tip:** You can create multiple shipping options for different DHL services to give your customers more choices at checkout.
+
+## Configuration Options
+
+| Option                | Type             | Default           | Description                                                                                                           |
+| --------------------- | ---------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `isEnabled`           | `boolean`        | `true`            | Enable or disable the DHL integration                                                                                 |
+| `userId`              | `string`         | -                 | Your DHL User ID for API authentication                                                                               |
+| `apiKey`              | `string`         | -                 | Your DHL API Key for authentication                                                                                   |
+| `accountId`           | `string`         | -                 | Your DHL Account ID                                                                                                   |
+| `enableLogs`          | `boolean`        | `false`           | Enable debug logging for DHL API requests                                                                             |
+| `itemDimensionsUnit`  | `"mm"` \| `"cm"` | `"mm"`            | Unit of measurement for product dimensions in Medusa. DHL expects centimeters, so values are converted automatically. |
+| `itemWeightUnit`      | `"g"` \| `"kg"`  | `"g"`             | Unit of measurement for product weight in Medusa. DHL expects grams, so values are converted automatically.           |
+| `webhookApiKey`       | `string`         | -                 | API key for authenticating incoming DHL Track & Trace Pusher webhooks                                                 |
+| `webhookApiKeyHeader` | `string`         | `"Authorization"` | HTTP header name that DHL uses to send the webhook API key                                                            |
+
+## DHL Track & Trace Pusher (Webhooks)
+
+This integration supports receiving real-time shipment status updates from DHL via webhooks. When configured, DHL will push tracking events to your Medusa instance, automatically updating fulfillment statuses.
+
+### Setting Up Webhooks
+
+1. **Configure the webhook API key** either via `medusa-config.ts` or in the Medusa Admin (**Settings → DHL**).
+
+2. **Register your webhook endpoint** with DHL. The endpoint URL is:
+
+   ```
+   https://your-store.com/store/dhl/webhook
+   ```
+
+3. **Provide the webhook API key** to DHL when setting up the Track & Trace Pusher subscription.
+
+### How It Works
+
+- When DHL sends a tracking update, the webhook validates the request using the configured API key header.
+- If authentication succeeds, the integration looks up fulfillments by tracking number.
+- Matching fulfillments are automatically updated with the latest status (shipped, delivered, etc.).
+- The webhook responds quickly (200 OK) and processes updates in the background.
+
+> **Note:** If no matching fulfillment is found for a tracking number, the webhook returns 404, signaling to DHL that the parcel is unknown.
 
 ## Generating Shipping Labels & Tracking
 

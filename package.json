@@ -1,6 +1,6 @@
 {
   "name": "medusa-dhl-ecommerce-fulfillment",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "DHL eCommerce integration for Medusa V2",
   "author": "mitchellston",
   "license": "MIT",
@@ -45,12 +45,12 @@
     "fulfillment"
   ],
   "scripts": {
-    "build": "medusa plugin:build",
-    "dev": "medusa plugin:develop",
-    "prepublishOnly": "medusa plugin:build",
+    "build": "bun run generate:api && medusa plugin:build",
+    "dev": "bun run generate:api && medusa plugin:develop",
+    "prepublishOnly": "bun run build",
     "lint": "npx eslint src",
     "lint:fix": "npx eslint src --fix",
-    "generate:api": "$(cd ./src/dhl-api/swagger; npx swagger-typescript-api generate --path ./swagger.json)"
+    "generate:api": "cd ./src/dhl-api/swagger && bun x swagger-typescript-api generate --path ./swagger.json"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
@@ -70,6 +70,8 @@
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.2",
     "@types/react-dom": "^18.2.25",
+    "ajv": "~8.13.0",
+    "ajv-formats": "~3.0.1",
     "awilix": "^8.0.1",
     "eslint": "^9.36.0",
     "pg": "^8.13.0",

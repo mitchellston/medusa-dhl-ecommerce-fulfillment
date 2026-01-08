@@ -14,6 +14,7 @@ import {
 import { getAuthToken } from '../../dhl-api/auth'
 import { calculateBestFulfillment } from '../../dhl-api/calculate-best-fulfillment'
 import { getFulfillmentOptions } from '../../dhl-api/get-fulfillment-options'
+import { getShipmentOptions } from '../../dhl-api/get-shipment-options'
 import createDHLShipmentWorkflow from '../../workflows/create-shipment'
 import getDhlCredentials from '../../workflows/get-credentials'
 import { SetupCredentialsInput } from '../../api/admin/dhl/route'
@@ -104,16 +105,42 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
   }
 
   /**
-   * Get fulfillment options from the DHL API.
+   * Get fulfillment options from the DHL Shipment Options API.
+   *
+   * Fetches available shipment option keys (DOOR, PS, EXP, etc.) from DHL
+   * and maps them to Medusa FulfillmentOption objects.
+   *
    * @returns {Promise<FulfillmentOption[]>}
    */
   async getFulfillmentOptions(): Promise<FulfillmentOption[]> {
     try {
-      return [
-        {
-          id: 'DOOR',
-        },
-      ]
+      const credentials = await this.getCredentials()
+      const baseUrl = this.getBaseUrl()
+      const token = await getAuthToken(
+        baseUrl,
+        credentials.user_id,
+        credentials.api_key,
+        credentials.account_id,
+      )
+
+      const shipmentOptions = await getShipmentOptions(
+        token,
+        baseUrl,
+        credentials.account_id,
+        credentials.enable_logs ? this.logger_ : undefined,
+      )
+
+      // Map DHL shipment options to Medusa FulfillmentOption format
+      return shipmentOptions.map((option) => ({
+        id: option.key,
+        carrier_key: option.key,
+        description: option.description,
+        rank: option.rank,
+        code: option.code,
+        optionType: option.optionType,
+        inputType: option.inputType,
+        exclusions: option.exclusions,
+      }))
     } catch (error) {
       this.logger_.error('Error getting DHL fulfillment options:', error)
       throw new Error('Failed to retrieve DHL fulfillment options')
@@ -122,7 +149,7 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
 
   /**
    * Calculate shipping price using DHL API.
-   * @param optionData - The shipping option data.
+   * @param optionData - The shipping option data (contains the selected DHL option key).
    * @param data - The shipping data.
    * @param context - The context for the shipping request.
    * @returns The calculated shipping price.
@@ -140,7 +167,8 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
       credentials.api_key,
       credentials.account_id,
     )
-    const option = 'DOOR' as const
+    // Get the selected DHL option key from optionData, fallback to DOOR
+    const option = typeof optionData?.carrier_key === 'string' ? optionData.carrier_key : 'DOOR'
 
     if (!context.items || context.items.length === 0) {
       throw new Error('Cart is empty')
@@ -292,7 +320,6 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
     fulfillment: Partial<Omit<FulfillmentDTO, 'provider_id' | 'data' | 'items'>>,
   ): Promise<CreateFulfillmentResult> {
     const credentials = await this.getCredentials()
-    const option = 'DOOR' as const
     const baseUrl = this.getBaseUrl()
 
     const token = await getAuthToken(
@@ -304,10 +331,16 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
 
     try {
       const locationId = fulfillment.location_id
+      const shippingOptionId = fulfillment.shipping_option_id
 
       if (!locationId) {
         this.logger_.error('DHL create fulfillment failed: Missing location ID')
         throw new Error('DHL create fulfillment failed: Missing location ID')
+      }
+
+      if (!shippingOptionId) {
+        this.logger_.error('DHL create fulfillment failed: Missing shipping option ID')
+        throw new Error('DHL create fulfillment failed: Missing shipping option ID')
       }
 
       const { result } = await createDHLShipmentWorkflow().run({
@@ -316,13 +349,13 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
           baseUrl,
           accountNumber: credentials.account_id,
           locationId,
+          shippingOptionId,
           data,
           items,
           order,
           fulfillment,
           dimensionUnitOfMeasure: credentials.item_dimensions_unit,
           weightUnitOfMeasure: credentials.item_weight_unit,
-          fulfillmentOptionKey: option,
           debug: credentials.enable_logs,
         },
       })

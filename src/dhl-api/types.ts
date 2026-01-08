@@ -61,3 +61,7 @@ export type MedusaItemDimensions = {
 export type DHLWebhookEventBody = Awaited<
   ReturnType<InstanceType<typeof Api>['your']['postYourEndpoint']>
 >['data']
+
+export type DHLShipmentOption = Awaited<
+  ReturnType<InstanceType<typeof Api>['shipmentOptions']['shipmentOptionsBusiness']>
+>['data'][number]

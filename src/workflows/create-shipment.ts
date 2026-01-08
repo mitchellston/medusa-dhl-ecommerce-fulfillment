@@ -10,12 +10,14 @@ import {
   IStockLocationService,
   IOrderModuleService,
   IProductModuleService,
+  IFulfillmentModuleService,
   FulfillmentDTO,
   FulfillmentItemDTO,
   FulfillmentOrderDTO,
   CreateFulfillmentResult,
   Logger,
   ProductVariantDTO,
+  ShippingOptionDTO,
 } from '@medusajs/framework/types'
 import { calculateBestFulfillment } from '../dhl-api/calculate-best-fulfillment'
 import { Modules } from '@medusajs/framework/utils'
@@ -33,13 +35,13 @@ type WorkflowInput = {
   baseUrl: string
   accountNumber: string
   locationId: string
+  shippingOptionId: string
   data: Record<string, unknown>
   items: (Partial<Omit<FulfillmentItemDTO, 'fulfillment'>> & { variant?: ProductVariantDTO })[]
   order: Partial<FulfillmentOrderDTO> | undefined
   fulfillment: Partial<Omit<FulfillmentDTO, 'provider_id' | 'data' | 'items'>>
   dimensionUnitOfMeasure: 'mm' | 'cm'
   weightUnitOfMeasure: 'g' | 'kg'
-  fulfillmentOptionKey: string
   debug?: boolean
   _logger?: Logger
 }
@@ -55,6 +57,22 @@ const createDHLShipment = createStep(
   ): Promise<StepResponse<{ labels: DHLShipmentResponse[] }>> => {
     if (input.debug && input._logger) {
       input._logger?.log('DHL create fulfillment started')
+    }
+
+    // Fetch the shipping option to get the carrier_key
+    const fulfillmentService = container.resolve<IFulfillmentModuleService>(Modules.FULFILLMENT)
+    const shippingOption: ShippingOptionDTO = await fulfillmentService.retrieveShippingOption(
+      input.shippingOptionId,
+    )
+
+    if (!shippingOption || !shippingOption.data || !shippingOption.data.carrier_key) {
+      throw new Error('DHL create fulfillment failed: Missing shipping option data or carrier_key')
+    }
+
+    const carrierKey = shippingOption.data.carrier_key as string
+
+    if (input.debug && input._logger) {
+      input._logger?.log(`Shipping option carrier_key: ${carrierKey}`)
     }
 
     // Get variant data using Order and Product modules
@@ -213,14 +231,14 @@ const createDHLShipment = createStep(
       originAddress,
       destinationAddress,
       recipient.company !== undefined && recipient.company !== '' ? true : false,
-      [input.fulfillmentOptionKey],
+      [carrierKey],
       input.debug ? input._logger : undefined,
     )
 
     const fulfillmentOptionsDimensions = shippingOptions
       .map((fulfillment) => {
         const fulfillmentOption = fulfillment.options.find(
-          (fulfillmentOption) => fulfillmentOption.key == input.fulfillmentOptionKey,
+          (fulfillmentOption) => fulfillmentOption.key == carrierKey,
         )
 
         if (fulfillmentOption) {
@@ -285,7 +303,7 @@ const createDHLShipment = createStep(
       originAddress,
       destinationAddress,
       pieces,
-      input.fulfillmentOptionKey,
+      carrierKey,
       input.debug ? input._logger : undefined,
     )
 

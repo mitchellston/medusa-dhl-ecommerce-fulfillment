@@ -3,18 +3,24 @@ import { Api } from './swagger/Api'
 import { DHLAddress, DHLFulfillmentOptionAddress } from './types'
 
 /**
- * Get the DHL fulfillment options.
+ * Get DHL capabilities for pricing and bin-packing.
+ *
+ * This calls the DHL Capabilities API (/capabilities/business) to retrieve
+ * parcel types and their pricing for a specific origin/destination pair.
+ * Used for calculating shipping prices based on package dimensions.
+ *
+ * Note: For fetching available shipment option keys (DOOR, PS, etc.),
+ * use `getShipmentOptions` from `./get-shipment-options.ts` instead.
+ *
  * @param token - The DHL API authentication token.
  * @param baseUrl - The base URL for the DHL API.
  * @param accountNumber - The DHL account number.
- * @param fromCountry - The sender's country.
- * @param fromPostalCode - The sender's postal code.
- * @param toCountry - The receiver's country.
- * @param toPostalCode - The receiver's postal code.
- * @param toBusiness - Is being shipped to a business.
- * @param options - The options (DOOR, BOUW, etc.)
- * @param logger - The logger instance.
- * @returns The DHL fulfillment options.
+ * @param sender - The sender's address (country code and postal code).
+ * @param receiver - The receiver's address (country code and postal code).
+ * @param toBusiness - Whether the shipment is to a business.
+ * @param options - The shipment options to filter by (DOOR, BOUW, etc.)
+ * @param logger - Optional logger instance.
+ * @returns The DHL capabilities response with parcel types and pricing.
  */
 export const getFulfillmentOptions = async (
   token: string,

@@ -11,6 +11,7 @@ import { Api } from './swagger/Api'
  * @param shipper - The shipper details for the shipment, conforming to the DhlAddress type.
  * @param receiver - The receiver details for the shipment, conforming to the DhlAddress type.
  * @param pieces - An array of pieces to be shipped, each conforming to the DHLShipmentPiece type.
+ * @param carrierKey - The carrier key to be used for the shipment.
  * @param logger - (Optional) Logger instance for logging debug and error information.
  * @returns A promise that resolves to a DHLShipmentResponse object containing the tracking number, tracking URL, and labels.
  * @throws Will throw an error if the DHL API request fails or returns a non-OK response.
@@ -23,7 +24,7 @@ export const createShipment = async (
   shipper: DHLAddress,
   receiver: DHLAddress,
   pieces: DHLShipmentPiece[],
-  fulfillmentOptionKey: string,
+  carrierKey: string,
   logger?: Logger | Console,
 ): Promise<DHLShipmentResponse[]> => {
   const api = new Api({
@@ -37,7 +38,7 @@ export const createShipment = async (
     receiver: receiver,
     shipmentId: shipmentId,
     shipper: shipper,
-    options: [{ key: fulfillmentOptionKey }],
+    options: [{ key: carrierKey }],
   })
 
   if (!response.ok) {

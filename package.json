@@ -50,7 +50,7 @@
     "prepublishOnly": "medusa plugin:build",
     "lint": "npx eslint src",
     "lint:fix": "npx eslint src --fix",
-    "postinstall": "$(cd ./src/dhl-api/swagger; npx swagger-typescript-api generate --path ./swagger.json)"
+    "generate:api": "$(cd ./src/dhl-api/swagger; npx swagger-typescript-api generate --path ./swagger.json)"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

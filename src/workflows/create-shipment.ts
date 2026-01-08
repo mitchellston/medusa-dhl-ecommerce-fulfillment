@@ -139,7 +139,7 @@ const createDHLShipment = createStep(
       throw new Error('Location address country code not found')
     }
 
-    const recipient: FulfillmentOrderDTO['billing_address'] =
+    const recipient: FulfillmentOrderDTO['shipping_address'] =
       input.order?.shipping_address ||
       (input.data['to_address'] as unknown as FulfillmentOrderDTO['billing_address']) ||
       undefined
@@ -174,6 +174,7 @@ const createDHLShipment = createStep(
         addition: recipientParsed.addition,
         additionalAddressLine: recipient.address_2 || '',
         street: recipientParsed.street,
+        isBusiness: recipient.company !== undefined && recipient.company !== '' ? true : false,
       },
     }
 
@@ -211,8 +212,7 @@ const createDHLShipment = createStep(
       input.accountNumber,
       originAddress,
       destinationAddress,
-      // TODO: Add business flag
-      false,
+      recipient.company !== undefined && recipient.company !== '' ? true : false,
       [input.fulfillmentOptionKey],
       input.debug ? input._logger : undefined,
     )

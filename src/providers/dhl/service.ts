@@ -192,8 +192,9 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
       credentials.account_id,
       originAddress,
       destinationAddress,
-      // TODO: Add business flag
-      false,
+      context.shipping_address.company !== undefined && context.shipping_address.company !== ''
+        ? true
+        : false,
       [option],
       credentials.enable_logs ? this.logger_ : undefined,
     )

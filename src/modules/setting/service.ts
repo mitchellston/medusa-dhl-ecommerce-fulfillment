@@ -1,9 +1,15 @@
 import { DHLSetting } from './models/setting'
+import { PricingManual } from './models/pricing_manual'
+import { PricingManualExtra } from './models/pricing_manual_extra'
+import { PricingManualExtraServicesPricing } from './models/pricing_manual_extra_services_pricing'
 import { MedusaService } from '@medusajs/framework/utils'
 import { SetupCredentialsInput } from '../../api/admin/dhl/route'
 
 class DHLSettingsModuleService extends MedusaService({
   DHLSetting,
+  PricingManual,
+  PricingManualExtra,
+  PricingManualExtraServicesPricing,
 }) {
   /**
    * Updates the DHL API credentials.

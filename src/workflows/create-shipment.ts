@@ -19,13 +19,13 @@ import {
   ProductVariantDTO,
   ShippingOptionDTO,
 } from '@medusajs/framework/types'
-import { calculateBestFulfillment } from '../dhl-api/calculate-best-fulfillment'
 import { Modules } from '@medusajs/framework/utils'
 import { DHLShipmentResponse, DHLShipmentPiece, DHLAddress } from '../dhl-api/types'
 import { createShipment } from '../dhl-api/create-shipment'
 import { getFulfillmentOptions } from '../dhl-api/get-fulfillment-options'
 import { extractAddressComponents, parseAddress } from '../utils/parse-address'
 import { v5 as uuidv5 } from 'uuid'
+import { getBestFulfillmentBasedOnPriceViaApi } from '../providers/dhl/dhl_pricing/api'
 
 // DHL namespace UUID for generating deterministic shipment IDs
 const DHL_NAMESPACE = 'd7109c1b-2b80-400a-9aec-fff7dfdf5eb1'
@@ -235,54 +235,19 @@ const createDHLShipment = createStep(
       input.debug ? input._logger : undefined,
     )
 
-    const fulfillmentOptionsDimensions = shippingOptions
-      .map((fulfillment) => {
-        const fulfillmentOption = fulfillment.options.find(
-          (fulfillmentOption) => fulfillmentOption.key == carrierKey,
-        )
-
-        if (fulfillmentOption) {
-          return {
-            key: fulfillment.parcelType.key,
-            maxWeight: fulfillment.parcelType.maxWeightGrams,
-            minWeight: fulfillment.parcelType.minWeightGrams,
-            height: fulfillment.parcelType.dimensions.maxHeightCm,
-            width: fulfillment.parcelType.dimensions.maxWidthCm,
-            length: fulfillment.parcelType.dimensions.maxLengthCm,
-            sum: fulfillment.parcelType.dimensions.maxSumCm ?? 0,
-            price: fulfillmentOption.price?.withTax ?? 0,
-          }
-        }
-        return undefined
-      })
-      .filter((opt): opt is NonNullable<typeof opt> => opt !== undefined)
-
-    if (input.debug && input._logger) {
-      input._logger?.log(
-        `Fulfillment options dimensions: ${JSON.stringify(fulfillmentOptionsDimensions, null, 2)}`,
-      )
-    }
-
     // Find the best shipping option for the items
     // Convert dimensions to cm if configured as mm (DHL expects cm)
     // Convert weight to grams if configured as kg (DHL expects grams)
     const dimensionDivisor = input.dimensionUnitOfMeasure === 'mm' ? 10 : 1
     const weightMultiplier = input.weightUnitOfMeasure === 'kg' ? 1000 : 1
-    const itemDimensions = input.items.map((item) => {
-      return {
-        weight: (item.variant?.weight ?? 0) * weightMultiplier,
-        height: (item.variant?.height ?? 0) / dimensionDivisor,
-        width: (item.variant?.width ?? 0) / dimensionDivisor,
-        length: (item.variant?.length ?? 0) / dimensionDivisor,
-        quantity: Number(item.quantity),
-      }
-    })
 
-    if (input.debug && input._logger) {
-      input._logger?.log(`Order Items dimensions: ${JSON.stringify(itemDimensions, null, 2)}`)
-    }
-
-    const orderPieces = calculateBestFulfillment(itemDimensions, fulfillmentOptionsDimensions)
+    const orderPieces = await getBestFulfillmentBasedOnPriceViaApi(
+      shippingOptions,
+      input.items,
+      carrierKey,
+      weightMultiplier,
+      dimensionDivisor,
+    )
 
     if (input.debug && input._logger) {
       input._logger?.log(`Order Pieces: ${JSON.stringify(orderPieces, null, 2)}`)

@@ -185,6 +185,55 @@ When you create a shipment for an order in Medusa, the integration will **automa
 
 <br/>
 
+## PDF Import Workflow (Manual Pricing)
+
+The plugin supports importing DHL rate sheet PDFs to populate the manual pricing tables. This is available in the **DHL Pricing** admin page.
+
+### How It Works
+
+1. **Upload**: Navigate to **DHL Pricing** in the admin sidebar and click **Import DHL PDF**. Select a PDF rate sheet (the standard DHL eCommerce tariff export).
+
+2. **Parsing**: The backend extracts text from the PDF and identifies rate sections by product name (e.g. DHL For You, DHL Europlus Pakketten), tariff type (`Collo / pakket` → `packet_type`, `Gewicht (kg)` → `weight`, `Pallet` → `pallet`), and country destinations.
+
+3. **Preview**: Parsed rows are shown in a preview table with:
+   - Row-level validation errors and warnings
+   - Duplicate detection against existing database records
+   - Checkboxes to include/exclude individual rows
+   - Filter by target table, errors, or duplicates
+
+4. **Import Mode**:
+   - **Upsert** — Matches existing records by the logical key (`provider + tarrifType + tariffValue + fromCountry + toCountry + rateSheetCode`) and updates their price/dates. Creates new records for unmatched rows.
+   - **New version** — Inserts all selected rows as new records regardless of existing data.
+
+5. **Commit**: After confirmation, the backend saves the selected rows and returns a summary (created / updated / skipped / failed counts). A downloadable error report (JSON) is available for any failures.
+
+### Parser Details
+
+- Handles Dutch-language PDFs with comma decimal separators (e.g. `9,37` → `9.37`)
+- Recognizes directional prefixes: `Beide` (bidirectional), `Naar` (outbound), `Van` (return/skipped)
+- Preserves region qualifiers in country names (e.g. `Duitsland (Ruhrgebied)`, `Italië (Noord)`)
+- Ignores return rate sections (DHL Parcel Connect Return)
+- Maps "Per extra 50KG" columns to the `pricing_manual_extra` table
+
+### API Endpoints
+
+| Method | Path                                    | Description                          |
+| ------ | --------------------------------------- | ------------------------------------ |
+| GET    | `/admin/dhl/pricing/base`               | List base rates (with query filters) |
+| POST   | `/admin/dhl/pricing/base`               | Create a base rate                   |
+| POST   | `/admin/dhl/pricing/base/:id`           | Update a base rate                   |
+| DELETE | `/admin/dhl/pricing/base/:id`           | Delete a base rate                   |
+| GET    | `/admin/dhl/pricing/extra`              | List extra rates                     |
+| POST   | `/admin/dhl/pricing/extra`              | Create an extra rate                 |
+| POST   | `/admin/dhl/pricing/extra/:id`          | Update an extra rate                 |
+| DELETE | `/admin/dhl/pricing/extra/:id`          | Delete an extra rate                 |
+| GET    | `/admin/dhl/pricing/extra-services`     | List extra services                  |
+| POST   | `/admin/dhl/pricing/extra-services`     | Create an extra service              |
+| POST   | `/admin/dhl/pricing/extra-services/:id` | Update an extra service              |
+| DELETE | `/admin/dhl/pricing/extra-services/:id` | Delete an extra service              |
+| POST   | `/admin/dhl/pricing/import/parse`       | Parse a PDF (base64 body)            |
+| POST   | `/admin/dhl/pricing/import/commit`      | Commit parsed rows                   |
+
 ## Contributing
 
 We welcome contributions to the DHL eCommerce Fulfillment Integration! If you have suggestions, improvements, or bug fixes, please follow these steps:

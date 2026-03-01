@@ -2,6 +2,7 @@ import { model } from '@medusajs/framework/utils'
 
 export const DHLSetting = model.define('dhl_setting', {
   id: model.id().primaryKey(),
+  pricing_mode: model.enum(['api', 'manual']).default('manual'),
   is_enabled: model.boolean(),
   user_id: model.text(),
   api_key: model.text(),

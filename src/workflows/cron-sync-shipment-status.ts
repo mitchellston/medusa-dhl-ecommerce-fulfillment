@@ -78,8 +78,8 @@ const fetchMedusaFulfillments = createStep(
     })
 
     const trackerCodes = fulfillments
-      .map((fulfillment) => fulfillment.labels.map((label) => label.tracking_number))
-      .flat()
+      .flatMap((fulfillment) => fulfillment.labels?.map((label) => label.tracking_number) ?? [])
+      .filter((code): code is string => Boolean(code))
 
     return new StepResponse({ fulfillments, trackerCodes })
   },
@@ -90,14 +90,16 @@ const fetchDhlShipmentStatus = createStep(
   async (
     input: WorkflowInput<{ trackerCodes: string[] }>,
   ): Promise<StepResponse<{ shipmentStatuses: DHLShipmentStatusResponse[] }>> => {
-    if (!input.trackerCodes.length) {
+    const trackerCodes = Array.isArray(input.trackerCodes) ? input.trackerCodes : []
+
+    if (!trackerCodes.length) {
       return new StepResponse({ shipmentStatuses: [] })
     }
 
     const shipmentStatuses = await getShipmentStatusesByTrackerCodes(
       input.baseUrl,
       input.token,
-      input.trackerCodes,
+      trackerCodes,
       input.debug ? input._logger : undefined,
     )
 

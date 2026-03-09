@@ -16,7 +16,13 @@ import createDHLShipmentWorkflow from '../../workflows/create-shipment'
 import getDhlCredentials from '../../workflows/get-credentials'
 import { SetupCredentialsInput } from '../../api/admin/dhl/route'
 import { DHLFulfillmentOptionAddress } from '../../dhl-api/types'
-import { calculatePriceViaApi } from './dhl_pricing/api'
+import { calculatePriceViaApi, getBestFulfillmentBasedOnPriceViaApi } from './dhl_pricing/api'
+import {
+  calculateManualPrice,
+  calculateManualPacketTypePrice,
+  buildManualPriceOverrides,
+} from './dhl_pricing/manual'
+import getPricingDataWorkflow from '../../workflows/get-pricing-data'
 
 type InjectedDependencies = {
   logger: Logger
@@ -24,6 +30,7 @@ type InjectedDependencies = {
 
 type Options = {
   isEnabled: boolean
+  pricingMode?: 'api' | 'manual'
   userId: string
   apiKey: string
   accountId: string
@@ -40,6 +47,12 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
   protected logger_: Logger
   protected options_: Options
 
+  private hasCompanyName(company: string | null | undefined): boolean {
+    if (!company) return false
+    const normalized = company.trim().toLowerCase()
+    return normalized !== '' && normalized !== 'unknown'
+  }
+
   private formatUnknownErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message
@@ -54,11 +67,6 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
     }
   }
 
-  /**
-   * Create a new DHL provider service.
-   * @param logger - The logger instance.
-   * @param options - The DHL options.
-   */
   constructor({ logger }: InjectedDependencies, options: Options) {
     super()
     this.logger_ = logger
@@ -86,6 +94,7 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
         account_id: this.options_.accountId,
         enable_logs: this.options_.enableLogs,
         is_enabled: this.options_.isEnabled,
+        pricing_mode: this.options_.pricingMode ?? 'api',
         item_dimensions_unit: this.options_.itemDimensionsUnit ?? 'mm',
         item_weight_unit: this.options_.itemWeightUnit ?? 'g',
         webhook_api_key: this.options_.webhookApiKey,
@@ -187,38 +196,25 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
    */
   async calculatePrice(
     optionData: CalculateShippingOptionPriceDTO['optionData'],
-    data: CalculateShippingOptionPriceDTO['data'],
+    _data: CalculateShippingOptionPriceDTO['data'],
     context: CalculateShippingOptionPriceDTO['context'],
   ): Promise<CalculatedShippingOptionPrice> {
     const credentials = await this.getCredentials()
-    const baseUrl = this.getBaseUrl()
-    const token = await getAuthToken(
-      baseUrl,
-      credentials.user_id,
-      credentials.api_key,
-      credentials.account_id,
-    )
-    // Get the selected DHL option key from optionData, fallback to DOOR
+
     const option = typeof optionData?.carrier_key === 'string' ? optionData.carrier_key : 'DOOR'
 
     if (!context.items || context.items.length === 0) {
       throw new Error('Cart is empty')
     }
 
-    // Validate customer address
     if (!context.shipping_address) {
       throw new Error('Missing shipping address in context')
-    }
-
-    if (!context.shipping_address.postal_code) {
-      throw new Error('Missing shipping address postal code in context')
     }
 
     if (!context.shipping_address.country_code) {
       throw new Error('Missing shipping address country code in context')
     }
 
-    // Validate store address
     if (!context.from_location) {
       throw new Error('Missing store address in context')
     }
@@ -227,22 +223,226 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
       throw new Error('Missing store address in context')
     }
 
-    if (!context.from_location.address.postal_code) {
-      throw new Error('Missing store address zip in context')
-    }
-
     if (!context.from_location.address.country_code) {
       throw new Error('Missing store address country in context')
     }
 
+    const weightMultiplier = credentials.item_weight_unit === 'kg' ? 1000 : 1
+    const dimensionDivisor = credentials.item_dimensions_unit === 'mm' ? 10 : 1
+    const log = credentials.enable_logs ? this.logger_ : undefined
+
+    if (credentials.pricing_mode === 'manual') {
+      log?.info(
+        `DHL calculatePrice: mode=manual, carrier=${option}, ` +
+          `route=${context.from_location.address.country_code}->${context.shipping_address.country_code}, ` +
+          `items=${context.items.length}`,
+      )
+      return this.calculatePriceManual(
+        credentials,
+        option,
+        context,
+        weightMultiplier,
+        dimensionDivisor,
+      )
+    }
+
+    log?.info(`DHL calculatePrice: mode=api, carrier=${option}`)
+
+    // API pricing requires postal codes for the DHL rate lookup
+    if (!context.shipping_address.postal_code) {
+      throw new Error('Missing shipping address postal code in context')
+    }
+
+    if (!context.from_location.address.postal_code) {
+      throw new Error('Missing store address zip in context')
+    }
+
+    return this.calculatePriceApi(credentials, option, context, weightMultiplier, dimensionDivisor)
+  }
+
+  private async calculatePriceManual(
+    credentials: SetupCredentialsInput,
+    option: string,
+    context: CalculateShippingOptionPriceDTO['context'],
+    weightMultiplier: number,
+    dimensionDivisor: number,
+  ): Promise<CalculatedShippingOptionPrice> {
+    const log = credentials.enable_logs ? this.logger_ : undefined
+
+    const { result: pricingResult, errors: pricingErrors } =
+      await getPricingDataWorkflow().run({ input: {} })
+
+    if (pricingErrors && pricingErrors.length > 0) {
+      throw new Error('Failed to fetch manual pricing data')
+    }
+
+    const { basePricing, extraPricing, extraServices } = pricingResult
+
+    log?.info(
+      `DHL manual pricing data: ${basePricing.length} base rows, ` +
+        `${extraPricing.length} extra rows, ${extraServices.length} extra services`,
+    )
+
+    const isB2B = this.hasCompanyName(context.shipping_address!.company)
+
+    const pricingInput = {
+      carrierKey: option,
+      items: context.items!,
+      fromCountryCode: context.from_location!.address!.country_code!,
+      toCountryCode: context.shipping_address!.country_code!,
+      isB2B,
+      now: new Date(),
+      weightMultiplier,
+    }
+
+    log?.info(
+      `DHL manual pricing input: carrier=${option}, isB2B=${isB2B}, ` +
+        `company=${JSON.stringify(context.shipping_address!.company)}, ` +
+        `route=${pricingInput.fromCountryCode}->${pricingInput.toCountryCode}`,
+    )
+
+    const pricingData = { basePricing, extraPricing, extraServices }
+
+    const isB2C = !pricingInput.isB2B
+    const hasPacketTypeRows = basePricing.some(
+      (row) => row.tarrifType === 'packet_type' && row.forConsument === isB2C,
+    )
+
+    if (hasPacketTypeRows) {
+      log?.info(
+        `DHL manual pricing: packet_type rows exist for ${isB2C ? 'B2C' : 'B2B'}, using packet-type pricing`,
+      )
+      return this.calculatePriceManualPacketType(
+        credentials,
+        option,
+        context,
+        weightMultiplier,
+        dimensionDivisor,
+        pricingInput,
+        pricingData,
+      )
+    }
+
+    log?.info(`DHL manual pricing: no packet_type rows in pricing data, using weight-based pricing`)
+
+    const totalPrice = calculateManualPrice(pricingInput, pricingData)
+
+    log?.info(`DHL manual pricing result: €${totalPrice}`)
+
+    return {
+      calculated_amount: totalPrice,
+      is_calculated_price_tax_inclusive: false,
+    }
+  }
+
+  private async calculatePriceManualPacketType(
+    credentials: SetupCredentialsInput,
+    option: string,
+    context: CalculateShippingOptionPriceDTO['context'],
+    weightMultiplier: number,
+    dimensionDivisor: number,
+    pricingInput: Parameters<typeof calculateManualPacketTypePrice>[1],
+    pricingData: Parameters<typeof calculateManualPacketTypePrice>[2],
+  ): Promise<CalculatedShippingOptionPrice> {
+    const log = credentials.enable_logs ? this.logger_ : undefined
+
+    if (!context.shipping_address!.postal_code) {
+      throw new Error('Missing shipping address postal code (required for packet-type pricing)')
+    }
+    if (!context.from_location!.address!.postal_code) {
+      throw new Error('Missing store address postal code (required for packet-type pricing)')
+    }
+
+    const baseUrl = this.getBaseUrl()
+    const token = await getAuthToken(
+      baseUrl,
+      credentials.user_id,
+      credentials.api_key,
+      credentials.account_id,
+    )
+
     const originAddress: DHLFulfillmentOptionAddress = {
-      postalCode: context.from_location.address.postal_code,
-      countryCode: context.from_location.address.country_code,
+      postalCode: context.from_location!.address!.postal_code,
+      countryCode: context.from_location!.address!.country_code!,
     }
 
     const destinationAddress: DHLFulfillmentOptionAddress = {
-      postalCode: context.shipping_address.postal_code,
-      countryCode: context.shipping_address.country_code,
+      postalCode: context.shipping_address!.postal_code,
+      countryCode: context.shipping_address!.country_code!,
+    }
+
+    const fulfillmentOptions = await getFulfillmentOptions(
+      token,
+      baseUrl,
+      credentials.account_id,
+      originAddress,
+      destinationAddress,
+      pricingInput.isB2B,
+      [option],
+      log,
+    )
+
+    const priceOverrides = buildManualPriceOverrides(
+      fulfillmentOptions,
+      option,
+      pricingInput,
+      pricingData,
+      log,
+    )
+
+    log?.info(
+      `DHL manual packet-type: ${priceOverrides.size} price overrides built from manual pricing`,
+    )
+
+    const binPackingResult = await getBestFulfillmentBasedOnPriceViaApi(
+      fulfillmentOptions,
+      context.items!,
+      option,
+      weightMultiplier,
+      dimensionDivisor,
+      priceOverrides,
+    )
+
+    log?.info(
+      `DHL manual packet-type bin-packing: ${JSON.stringify(
+        binPackingResult.map((r) => ({ key: r.fulfillmentOption.key, qty: r.quantity })),
+      )}`,
+    )
+
+    const totalPrice = calculateManualPacketTypePrice(binPackingResult, pricingInput, pricingData, log)
+
+    log?.info(`DHL manual packet-type result: €${totalPrice}`)
+
+    return {
+      calculated_amount: totalPrice,
+      is_calculated_price_tax_inclusive: false,
+    }
+  }
+
+  private async calculatePriceApi(
+    credentials: SetupCredentialsInput,
+    option: string,
+    context: CalculateShippingOptionPriceDTO['context'],
+    weightMultiplier: number,
+    dimensionDivisor: number,
+  ): Promise<CalculatedShippingOptionPrice> {
+    const log = credentials.enable_logs ? this.logger_ : undefined
+    const baseUrl = this.getBaseUrl()
+    const token = await getAuthToken(
+      baseUrl,
+      credentials.user_id,
+      credentials.api_key,
+      credentials.account_id,
+    )
+
+    const originAddress: DHLFulfillmentOptionAddress = {
+      postalCode: context.from_location!.address!.postal_code!,
+      countryCode: context.from_location!.address!.country_code!,
+    }
+
+    const destinationAddress: DHLFulfillmentOptionAddress = {
+      postalCode: context.shipping_address!.postal_code!,
+      countryCode: context.shipping_address!.country_code!,
     }
 
     const shippingOptions = await getFulfillmentOptions(
@@ -251,23 +451,20 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
       credentials.account_id,
       originAddress,
       destinationAddress,
-      context.shipping_address.company !== undefined && context.shipping_address.company !== ''
-        ? true
-        : false,
+      this.hasCompanyName(context.shipping_address!.company),
       [option],
-      credentials.enable_logs ? this.logger_ : undefined,
+      log,
     )
-
-    const dimensionDivisor = credentials.item_dimensions_unit === 'mm' ? 10 : 1
-    const weightMultiplier = credentials.item_weight_unit === 'kg' ? 1000 : 1
 
     const totalPrice = await calculatePriceViaApi(
       shippingOptions,
-      context.items,
+      context.items!,
       option,
       weightMultiplier,
       dimensionDivisor,
     )
+
+    log?.info(`DHL API pricing result: ${totalPrice}`)
 
     return {
       calculated_amount: totalPrice,
@@ -319,6 +516,8 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
       credentials.account_id,
     )
 
+    const log = credentials.enable_logs ? this.logger_ : undefined
+
     try {
       const locationId = fulfillment.location_id
       const shippingOptionId = fulfillment.shipping_option_id
@@ -333,6 +532,11 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
         throw new Error('DHL create fulfillment failed: Missing shipping option ID')
       }
 
+      log?.info(
+        `DHL createFulfillment: location=${locationId}, option=${shippingOptionId}, ` +
+          `pricingMode=${credentials.pricing_mode}, items=${items.length}`,
+      )
+
       const { result } = await createDHLShipmentWorkflow().run({
         input: {
           token,
@@ -346,9 +550,12 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
           fulfillment,
           dimensionUnitOfMeasure: credentials.item_dimensions_unit,
           weightUnitOfMeasure: credentials.item_weight_unit,
+          pricingMode: credentials.pricing_mode,
           debug: credentials.enable_logs,
         },
       })
+
+      log?.info(`DHL createFulfillment: shipment created successfully`)
 
       return result.shipment
     } catch (error: unknown) {

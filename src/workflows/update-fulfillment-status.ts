@@ -39,7 +39,8 @@ const updateFulfillmentByTrackingCode = createStep(
       string,
       { shipped: Date | undefined; delivered: Date | undefined }
     >()
-    for (const shipmentStatus of input.shipmentStatuses) {
+    const shipmentStatuses = Array.isArray(input.shipmentStatuses) ? input.shipmentStatuses : []
+    for (const shipmentStatus of shipmentStatuses) {
       if (!shipmentStatus.events) {
         continue
       }
@@ -197,14 +198,20 @@ const updateFulfillmentStatusWorkflow = createWorkflow(
     })
 
     const { trackingCodeWithLatestStatus } = updateFulfillmentByTrackingCode({
-      ...input,
+      fulfillments: input.fulfillments,
+      shipmentStatuses: input.shipmentStatuses,
+      debug: input.debug,
+      _logger: input._logger,
       trackerCodes,
     })
 
     const { fulfillmentIdToOrderId } = fetchOrderIdsForFulfillments(input)
 
     const { fulfillments } = updateFulfillmentStatus({
-      ...input,
+      fulfillments: input.fulfillments,
+      shipmentStatuses: input.shipmentStatuses,
+      debug: input.debug,
+      _logger: input._logger,
       trackingCodeWithLatestStatus,
       fulfillmentIdToOrderId,
     })

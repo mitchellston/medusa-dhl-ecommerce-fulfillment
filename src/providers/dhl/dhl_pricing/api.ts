@@ -2,6 +2,11 @@ import { CartLineItemDTO, FulfillmentItemDTO, ProductVariantDTO } from '@medusaj
 import { getFulfillmentOptions } from '../../../dhl-api/get-fulfillment-options'
 import { calculateBestFulfillment } from '../../../dhl-api/calculate-best-fulfillment'
 
+/**
+ * @param priceOverrides When provided, the price for each parcel-type key is
+ *   taken from this map instead of the DHL API response. This allows manual
+ *   pricing mode to influence bin-packing optimisation (cheapest-first).
+ */
 export async function getBestFulfillmentBasedOnPriceViaApi(
   fulfillmentOptions: Awaited<ReturnType<typeof getFulfillmentOptions>>,
   items:
@@ -12,6 +17,7 @@ export async function getBestFulfillmentBasedOnPriceViaApi(
   option: string,
   weightUnitOfMeasure: number,
   dimensionUnitOfMeasure: number,
+  priceOverrides?: Map<string, number>,
 ) {
   type PricingItem = (typeof items)[number]
 
@@ -30,7 +36,10 @@ export async function getBestFulfillmentBasedOnPriceViaApi(
           width: fulfillment.parcelType.dimensions.maxWidthCm,
           length: fulfillment.parcelType.dimensions.maxLengthCm,
           sum: fulfillment.parcelType.dimensions.maxSumCm ?? 0,
-          price: fulfillmentOption.price?.withTax ?? 0,
+          price:
+            priceOverrides?.get(fulfillment.parcelType.key) ??
+            fulfillmentOption.price?.withTax ??
+            0,
         }
       }
       return undefined

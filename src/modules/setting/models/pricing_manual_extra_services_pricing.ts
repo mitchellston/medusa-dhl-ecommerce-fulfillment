@@ -6,6 +6,6 @@ export const PricingManualExtraServicesPricing = model.define(
   {
     id: model.id().primaryKey(),
     service: model.text(), // age_check, door, expresser
-    price: model.number(), // price is without tax
+    price: model.float(), // price in euros (excl. tax), as imported from rate sheets
   },
 )

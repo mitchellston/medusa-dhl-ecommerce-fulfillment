@@ -9,7 +9,7 @@ export const PricingManualExtra = model.define('pricing_manual_extra', {
   provider: model.text(), // DHL Europlus Expresser Pakketten, DHL Europlus Pakketten, DHL For You
   fromCountry: model.text(),
   toCountry: model.text(),
-  price: model.number(), // price is without tax
+  price: model.float(), // price in euros (excl. tax), as imported from rate sheets
   validFrom: model.dateTime(),
   validTo: model.dateTime().nullable(),
   rateSheetCode: model.text().nullable(),

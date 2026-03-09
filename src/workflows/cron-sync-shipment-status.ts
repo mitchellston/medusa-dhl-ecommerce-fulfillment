@@ -151,10 +151,21 @@ const cronSyncShipmentStatusWorkflow = createWorkflow(
   (input: WorkflowInput<object>): WorkflowResponse<{ synced: number }> => {
     const { fulfillments, trackerCodes } = fetchMedusaFulfillments(input)
 
-    const { shipmentStatuses } = fetchDhlShipmentStatus({ ...input, trackerCodes })
+    const { shipmentStatuses } = fetchDhlShipmentStatus({
+      token: input.token,
+      baseUrl: input.baseUrl,
+      limit: input.limit,
+      debug: input.debug,
+      _logger: input._logger,
+      trackerCodes,
+    })
 
     const { synced } = updateMedusaFulfillmentsFromDhl({
-      ...input,
+      token: input.token,
+      baseUrl: input.baseUrl,
+      limit: input.limit,
+      debug: input.debug,
+      _logger: input._logger,
       fulfillments,
       shipmentStatuses,
     })

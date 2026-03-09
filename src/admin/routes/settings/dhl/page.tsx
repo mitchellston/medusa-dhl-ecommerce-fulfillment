@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 
 const initialState = {
   is_enabled: true,
+  pricing_mode: 'manual' as 'api' | 'manual',
   user_id: '',
   api_key: '',
   account_id: '',
@@ -148,6 +149,28 @@ const DHLSettingsPageInner = () => {
             />
           </div>
           <Hint className="mb-2 mt-1">Enable or disable the DHL integration.</Hint>
+        </div>
+
+        <div>
+          <Label htmlFor="pricing_mode">Pricing Mode</Label>
+          <Hint className="mt-1 block pb-1">
+            Choose how shipping prices are calculated. &quot;API&quot; fetches live rates from DHL.
+            &quot;Manual&quot; uses locally configured pricing tables.
+          </Hint>
+          <Select
+            value={form.pricing_mode}
+            onValueChange={(value) =>
+              setForm((prev) => ({ ...prev, pricing_mode: value as 'api' | 'manual' }))
+            }
+          >
+            <Select.Trigger>
+              <Select.Value placeholder="Select pricing mode" />
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Item value="api">API (live DHL rates)</Select.Item>
+              <Select.Item value="manual">Manual (local pricing tables)</Select.Item>
+            </Select.Content>
+          </Select>
         </div>
 
         <div>

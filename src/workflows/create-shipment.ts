@@ -26,6 +26,9 @@ import { getFulfillmentOptions } from '../dhl-api/get-fulfillment-options'
 import { extractAddressComponents, parseAddress } from '../utils/parse-address'
 import { v5 as uuidv5 } from 'uuid'
 import { getBestFulfillmentBasedOnPriceViaApi } from '../providers/dhl/dhl_pricing/api'
+import { buildManualPriceOverrides, filterMatchingRows } from '../providers/dhl/dhl_pricing/manual'
+import { DHL_SETTINGS_MODULE } from '../modules/setting'
+import DHLSettingsModuleService from '../modules/setting/service'
 
 // DHL namespace UUID for generating deterministic shipment IDs
 const DHL_NAMESPACE = 'd7109c1b-2b80-400a-9aec-fff7dfdf5eb1'
@@ -42,6 +45,7 @@ type WorkflowInput = {
   fulfillment: Partial<Omit<FulfillmentDTO, 'provider_id' | 'data' | 'items'>>
   dimensionUnitOfMeasure: 'mm' | 'cm'
   weightUnitOfMeasure: 'g' | 'kg'
+  pricingMode?: 'api' | 'manual'
   debug?: boolean
   _logger?: Logger
 }
@@ -235,11 +239,46 @@ const createDHLShipment = createStep(
       input.debug ? input._logger : undefined,
     )
 
-    // Find the best shipping option for the items
-    // Convert dimensions to cm if configured as mm (DHL expects cm)
-    // Convert weight to grams if configured as kg (DHL expects grams)
     const dimensionDivisor = input.dimensionUnitOfMeasure === 'mm' ? 10 : 1
     const weightMultiplier = input.weightUnitOfMeasure === 'kg' ? 1000 : 1
+
+    let priceOverrides: Map<string, number> | undefined
+    if (input.pricingMode === 'manual') {
+      const dhlSettingsService: DHLSettingsModuleService =
+        container.resolve(DHL_SETTINGS_MODULE)
+
+      const [basePricing, extraPricing, extraServices] = await Promise.all([
+        dhlSettingsService.listPricingManuals(),
+        dhlSettingsService.listPricingManualExtras(),
+        dhlSettingsService.listPricingManualExtraServicesPricings(),
+      ])
+
+      const isB2B =
+        recipient.company !== undefined && recipient.company !== ''
+
+      const pricingInput = {
+        carrierKey,
+        items: input.items,
+        fromCountryCode: location.address!.country_code,
+        toCountryCode: recipient.country_code!,
+        isB2B,
+        now: new Date(),
+        weightMultiplier,
+      }
+
+      const pricingData = { basePricing, extraPricing, extraServices }
+      const hasPacketTypePricing =
+        filterMatchingRows(basePricing, pricingInput, 'packet_type').length > 0
+
+      if (hasPacketTypePricing) {
+        priceOverrides = buildManualPriceOverrides(
+          shippingOptions,
+          carrierKey,
+          pricingInput,
+          pricingData,
+        )
+      }
+    }
 
     const orderPieces = await getBestFulfillmentBasedOnPriceViaApi(
       shippingOptions,
@@ -247,6 +286,7 @@ const createDHLShipment = createStep(
       carrierKey,
       weightMultiplier,
       dimensionDivisor,
+      priceOverrides,
     )
 
     if (input.debug && input._logger) {

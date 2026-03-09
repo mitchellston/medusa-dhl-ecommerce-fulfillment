@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const PostDHLSettings = z.object({
   is_enabled: z.boolean(),
+  pricing_mode: z.enum(['api', 'manual']).default('manual'),
   user_id: z.string().min(2).max(100),
   api_key: z.string().min(2).max(100),
   account_id: z.string().min(2).max(100),

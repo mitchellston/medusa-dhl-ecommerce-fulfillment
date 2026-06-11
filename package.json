@@ -53,7 +53,9 @@
     "generate:api": "cd ./src/dhl-api/swagger && bun x swagger-typescript-api generate --path ./swagger.json"
   },
   "devDependencies": {
+    "@cyntler/react-doc-viewer": "^1.17.0",
     "@eslint/js": "^9.36.0",
+    "pdfjs-dist": "^4.0.379",
     "@medusajs/admin-sdk": "^2.5.0",
     "@medusajs/cli": "^2.5.0",
     "@medusajs/framework": "^2.5.0",

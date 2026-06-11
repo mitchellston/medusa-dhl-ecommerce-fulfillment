@@ -11,4 +11,5 @@ export const DHLSetting = model.define('dhl_setting', {
   item_weight_unit: model.enum(['g', 'kg']).default('g'),
   webhook_api_key: model.text().nullable(),
   webhook_api_key_header: model.text().default('Authorization'),
+  pricing_mode: model.enum(['api', 'manual']).default('api'),
 })

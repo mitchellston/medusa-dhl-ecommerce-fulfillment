@@ -2,23 +2,20 @@ import { AbstractFulfillmentProviderService } from "@medusajs/framework/utils";
 import {
   CalculatedShippingOptionPrice,
   CalculateShippingOptionPriceDTO,
-  CartLineItemDTO,
   CreateFulfillmentResult,
   FulfillmentDTO,
   FulfillmentItemDTO,
   FulfillmentOption,
   FulfillmentOrderDTO,
   Logger,
-  ProductVariantDTO,
 } from "@medusajs/framework/types";
 import { getAuthToken } from "../../dhl-api/auth";
-import { calculateBestFulfillment } from "../../dhl-api/calculate-best-fulfillment";
-import { getFulfillmentOptions } from "../../dhl-api/get-fulfillment-options";
 import { getShipmentOptions } from "../../dhl-api/get-shipment-options";
 import createDHLShipmentWorkflow from "../../workflows/create-shipment";
 import getDhlCredentials from "../../workflows/get-credentials";
 import { SetupCredentialsInput } from "../../api/admin/dhl/route";
-import { DHLFulfillmentOptionAddress } from "../../dhl-api/types";
+import { calculatePriceApi } from "./calculate-price-api";
+import { calculatePriceManual } from "./calculate-price-manual";
 
 type InjectedDependencies = {
   logger: Logger;
@@ -34,6 +31,7 @@ type Options = {
   itemWeightUnit?: "g" | "kg";
   webhookApiKey?: string;
   webhookApiKeyHeader?: string;
+  pricingMode?: "api" | "manual";
 };
 
 class DHLProviderService extends AbstractFulfillmentProviderService {
@@ -58,10 +56,13 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
 
   /**
    * Create a new DHL provider service.
-   * @param logger - The logger instance.
+   * @param dependencies - The injected dependencies.
    * @param options - The DHL options.
    */
-  constructor({ logger }: InjectedDependencies, options: Options) {
+  constructor(
+    { logger }: InjectedDependencies,
+    options: Options
+  ) {
     super();
     this.logger_ = logger;
     this.options_ = options;
@@ -95,6 +96,7 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
         webhook_api_key: this.options_.webhookApiKey,
         webhook_api_key_header:
           this.options_.webhookApiKeyHeader ?? "Authorization",
+        pricing_mode: this.options_.pricingMode ?? "api",
       };
     }
 
@@ -184,7 +186,9 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
   }
 
   /**
-   * Calculate shipping price using DHL API.
+   * Calculate shipping price using DHL API or manual rates.
+   * Delegates to the appropriate calculator based on pricing_mode setting.
+   *
    * @param optionData - The shipping option data (contains the selected DHL option key).
    * @param data - The shipping data.
    * @param context - The context for the shipping request.
@@ -197,140 +201,34 @@ class DHLProviderService extends AbstractFulfillmentProviderService {
   ): Promise<CalculatedShippingOptionPrice> {
     const credentials = await this.getCredentials();
     const baseUrl = this.getBaseUrl();
-    const token = await getAuthToken(
-      baseUrl,
-      credentials.user_id,
-      credentials.api_key,
-      credentials.account_id
-    );
-    // Get the selected DHL option key from optionData, fallback to DOOR
-    const option =
-      typeof optionData?.carrier_key === "string"
-        ? optionData.carrier_key
-        : "DOOR";
 
-    if (!context.items || context.items.length === 0) {
-      throw new Error("Cart is empty");
-    }
+    // Check pricing mode and delegate to appropriate calculator
+    const pricingMode = credentials.pricing_mode ?? "api";
 
-    // Validate customer address
-    if (!context.shipping_address) {
-      throw new Error("Missing shipping address in context");
-    }
-
-    if (!context.shipping_address.postal_code) {
-      throw new Error("Missing shipping address postal code in context");
-    }
-
-    if (!context.shipping_address.country_code) {
-      throw new Error("Missing shipping address country code in context");
-    }
-
-    // Validate store address
-    if (!context.from_location) {
-      throw new Error("Missing store address in context");
-    }
-
-    if (!context.from_location.address) {
-      throw new Error("Missing store address in context");
-    }
-
-    if (!context.from_location.address.postal_code) {
-      throw new Error("Missing store address zip in context");
-    }
-
-    if (!context.from_location.address.country_code) {
-      throw new Error("Missing store address country in context");
-    }
-
-    const originAddress: DHLFulfillmentOptionAddress = {
-      postalCode: context.from_location.address.postal_code,
-      countryCode: context.from_location.address.country_code,
-    };
-
-    const destinationAddress: DHLFulfillmentOptionAddress = {
-      postalCode: context.shipping_address.postal_code,
-      countryCode: context.shipping_address.country_code,
-    };
-
-    const shippingOptions = await getFulfillmentOptions(
-      token,
-      baseUrl,
-      credentials.account_id,
-      originAddress,
-      destinationAddress,
-      context.shipping_address.company !== undefined &&
-        context.shipping_address.company !== ""
-        ? true
-        : false,
-      [option],
-      credentials.enable_logs ? this.logger_ : undefined
-    );
-
-    const fulfillmentOptionsDimensions = shippingOptions
-      .map((fulfillment) => {
-        const fulfillmentOption = fulfillment.options.find(
-          (fulfillmentOption) => fulfillmentOption.key == option
-        );
-
-        if (fulfillmentOption) {
-          return {
-            key: fulfillment.parcelType.key,
-            maxWeight: fulfillment.parcelType.maxWeightGrams,
-            minWeight: fulfillment.parcelType.minWeightGrams,
-            height: fulfillment.parcelType.dimensions.maxHeightCm,
-            width: fulfillment.parcelType.dimensions.maxWidthCm,
-            length: fulfillment.parcelType.dimensions.maxLengthCm,
-            sum: fulfillment.parcelType.dimensions.maxSumCm ?? 0,
-            price: fulfillmentOption.price?.withTax ?? 0,
-          };
-        }
-        return undefined;
-      })
-      .filter((opt): opt is NonNullable<typeof opt> => opt !== undefined);
-
-    // Find the best shipping option for the items
-    // Convert dimensions to cm if configured as mm (DHL expects cm)
-    // Convert weight to grams if configured as kg (DHL expects grams)
-    const dimensionDivisor = credentials.item_dimensions_unit === "mm" ? 10 : 1;
-    const weightMultiplier = credentials.item_weight_unit === "kg" ? 1000 : 1;
-    const itemDimensions = context.items.map(
-      (item: CartLineItemDTO & { variant?: ProductVariantDTO }) => {
-        return {
-          weight: (item.variant?.weight ?? 0) * weightMultiplier,
-          height: (item.variant?.height ?? 0) / dimensionDivisor,
-          width: (item.variant?.width ?? 0) / dimensionDivisor,
-          length: (item.variant?.length ?? 0) / dimensionDivisor,
-          quantity: Number(item.quantity),
-        };
+    if (pricingMode === "manual") {
+      if (credentials.enable_logs) {
+        this.logger_.info("DHL: Using manual pricing mode");
       }
-    );
-
-    // Calculate the best shipping option using bin packing
-    const bestFulfillment = calculateBestFulfillment(
-      itemDimensions,
-      fulfillmentOptionsDimensions
-    );
-
-    if (bestFulfillment.length === 0) {
-      this.logger_.error(
-        "DHL rate quote: no suitable fulfillment options found"
-      );
-      throw new Error("No suitable shipping options found for the items");
+      return calculatePriceManual({
+        credentials,
+        baseUrl,
+        optionData,
+        context,
+        logger: this.logger_,
+      });
     }
 
-    // Calculate total price from all required packages
-    const totalPrice = bestFulfillment.reduce(
-      (sum, { fulfillmentOption, quantity }) => {
-        return sum + fulfillmentOption.price * quantity;
-      },
-      0
-    );
-
-    return {
-      calculated_amount: totalPrice,
-      is_calculated_price_tax_inclusive: true,
-    };
+    // Default to API-based pricing
+    if (credentials.enable_logs) {
+      this.logger_.info("DHL: Using API pricing mode");
+    }
+    return calculatePriceApi({
+      credentials,
+      baseUrl,
+      optionData,
+      context,
+      logger: this.logger_,
+    });
   }
 
   /**

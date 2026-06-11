@@ -14,6 +14,7 @@ const initialState = {
   item_weight_unit: 'g' as 'g' | 'kg',
   webhook_api_key: '' as string | null,
   webhook_api_key_header: 'Authorization',
+  pricing_mode: 'api' as 'api' | 'manual',
 }
 
 const queryClient = new QueryClient()
@@ -244,6 +245,51 @@ const DHLSettingsPageInner = () => {
             </Select.Content>
           </Select>
         </div>
+
+        <div className="border-t pt-6 mt-2">
+          <h3 className="font-semibold mb-4">Pricing Configuration</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Choose how shipping prices are calculated. API mode uses real-time DHL pricing. Manual
+            mode uses rates you configure from your DHL rate sheet.
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="pricing_mode">Pricing Mode</Label>
+          <Hint className="mt-1 block pb-1">
+            Select how shipping prices are determined. Use &quot;Manual&quot; if you don&apos;t have
+            API pricing access and want to input rates from your DHL PDF rate sheet.
+          </Hint>
+          <Select
+            value={form.pricing_mode}
+            onValueChange={(value) =>
+              setForm((prev) => ({ ...prev, pricing_mode: value as 'api' | 'manual' }))
+            }
+          >
+            <Select.Trigger>
+              <Select.Value placeholder="Select pricing mode" />
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Item value="api">API (Real-time DHL Pricing)</Select.Item>
+              <Select.Item value="manual">Manual (Custom Rate Sheet)</Select.Item>
+            </Select.Content>
+          </Select>
+        </div>
+
+        {form.pricing_mode === 'manual' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <p className="text-sm text-blue-800">
+              Manual pricing mode is enabled. Configure your shipping rates in the{' '}
+              <a
+                href="/app/settings/dhl/rates"
+                className="text-blue-600 hover:underline font-bold"
+              >
+                Rate Management
+              </a>{' '}
+              page.
+            </p>
+          </div>
+        )}
 
         <div className="border-t pt-6 mt-2">
           <h3 className="font-semibold mb-4">Webhook Settings (Track &amp; Trace Pusher)</h3>

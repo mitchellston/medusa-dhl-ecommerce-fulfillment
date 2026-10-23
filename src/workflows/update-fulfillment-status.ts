@@ -18,6 +18,9 @@ type WorkflowInput<T extends object> = T & {
   _logger?: Logger
 }
 
+// Step outputs are JSON-serialized between steps, so use plain objects and ISO strings (not Map/Date).
+type TrackingStatus = { shipped?: string; delivered?: string }
+
 type FulfillmentWithOrder = {
   id: string
   order?: { id: string } | null
@@ -27,29 +30,19 @@ const updateFulfillmentByTrackingCode = createStep(
   'update-fulfillment-status--update-fulfillment-by-tracking-code',
   async (
     input: WorkflowInput<{ trackerCodes: WorkflowData<string[]> }>,
-  ): Promise<
-    StepResponse<{
-      trackingCodeWithLatestStatus: Map<
-        string,
-        { shipped: Date | undefined; delivered: Date | undefined }
-      >
-    }>
-  > => {
-    const trackingCodeWithLatestStatus = new Map<
-      string,
-      { shipped: Date | undefined; delivered: Date | undefined }
-    >()
+  ): Promise<StepResponse<{ trackingCodeWithLatestStatus: Record<string, TrackingStatus> }>> => {
+    const trackingCodeWithLatestStatus: Record<string, TrackingStatus> = {}
     const shipmentStatuses = Array.isArray(input.shipmentStatuses) ? input.shipmentStatuses : []
     for (const shipmentStatus of shipmentStatuses) {
       if (!shipmentStatus.events) {
         continue
       }
 
-      let shippedAt: Date | undefined
-      let deliveredAt: Date | undefined
+      let shippedAt: string | undefined
+      let deliveredAt: string | undefined
       for (const event of shipmentStatus.events) {
         const eventStatus = event.status as DHLShipmentStatusEvent | undefined
-        const timestamp = event.timestamp ? new Date(event.timestamp) : undefined
+        const timestamp = event.timestamp ? new Date(event.timestamp).toISOString() : undefined
         if (!eventStatus || !timestamp) {
           continue
         }
@@ -69,17 +62,17 @@ const updateFulfillmentByTrackingCode = createStep(
       )
       input.trackerCodes.map((trackerCode) => {
         if (shipmentTrackerCodes.has(trackerCode)) {
-          if (input._logger && trackingCodeWithLatestStatus.has(trackerCode)) {
-            const existing = trackingCodeWithLatestStatus.get(trackerCode)
+          if (input._logger && trackingCodeWithLatestStatus[trackerCode]) {
+            const existing = trackingCodeWithLatestStatus[trackerCode]
             input._logger.warn(
               `Multiple status events found for tracker code ${trackerCode} shippedAt: ${shippedAt} deliveredAt: ${deliveredAt} and existing: shippedAt: ${existing?.shipped} deliveredAt: ${existing?.delivered}`,
             )
           }
 
-          trackingCodeWithLatestStatus.set(trackerCode, {
+          trackingCodeWithLatestStatus[trackerCode] = {
             delivered: deliveredAt,
             shipped: shippedAt,
-          })
+          }
         }
       })
     }
@@ -93,7 +86,7 @@ const fetchOrderIdsForFulfillments = createStep(
   async (
     input: WorkflowInput<object>,
     { container },
-  ): Promise<StepResponse<{ fulfillmentIdToOrderId: Map<string, string> }>> => {
+  ): Promise<StepResponse<{ fulfillmentIdToOrderId: Record<string, string> }>> => {
     const fulfillmentIds = input.fulfillments.map((f) => f.id)
 
     const query = container.resolve('query') as {
@@ -112,11 +105,11 @@ const fetchOrderIdsForFulfillments = createStep(
       },
     })
 
-    const fulfillmentIdToOrderId = new Map<string, string>()
+    const fulfillmentIdToOrderId: Record<string, string> = {}
     for (const fulfillment of data) {
       const orderId = fulfillment.order?.id
       if (orderId) {
-        fulfillmentIdToOrderId.set(fulfillment.id, orderId)
+        fulfillmentIdToOrderId[fulfillment.id] = orderId
       }
     }
 
@@ -128,11 +121,8 @@ const updateFulfillmentStatus = createStep(
   'update-fulfillment-status--update-fulfillment-status',
   async (
     input: WorkflowInput<{
-      trackingCodeWithLatestStatus: Map<
-        string,
-        { shipped: Date | undefined; delivered: Date | undefined }
-      >
-      fulfillmentIdToOrderId: Map<string, string>
+      trackingCodeWithLatestStatus: Record<string, TrackingStatus>
+      fulfillmentIdToOrderId: Record<string, string>
     }>,
     { container },
   ): Promise<StepResponse<{ fulfillments: FulfillmentDTO[] }>> => {
@@ -140,12 +130,11 @@ const updateFulfillmentStatus = createStep(
     for (const fulfillment of input.fulfillments) {
       // One bad fulfillment (e.g. its order was canceled) must not fail the whole sync run.
       try {
-        let deliveredAt: Date | undefined
-        let shippedAt: Date | undefined
+        let deliveredAt: string | undefined
+        let shippedAt: string | undefined
         for (const label of fulfillment.labels) {
-          const trackingCodeWithLatestStatus = input.trackingCodeWithLatestStatus.get(
-            label.tracking_number,
-          )
+          const trackingCodeWithLatestStatus =
+            input.trackingCodeWithLatestStatus[label.tracking_number]
           if (!trackingCodeWithLatestStatus) {
             continue
           }
@@ -161,13 +150,13 @@ const updateFulfillmentStatus = createStep(
           await updateFulfillmentWorkflow(container).run({
             input: {
               id: fulfillment.id,
-              shipped_at: shippedAt,
+              shipped_at: new Date(shippedAt),
             },
           })
         }
 
         if (deliveredAt) {
-          const orderId = input.fulfillmentIdToOrderId.get(fulfillment.id)
+          const orderId = input.fulfillmentIdToOrderId[fulfillment.id]
           if (!orderId) {
             input._logger?.warn(
               `Skipping marking fulfillment ${fulfillment.id} as delivered because orderId could not be resolved`,

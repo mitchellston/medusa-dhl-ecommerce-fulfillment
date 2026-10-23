@@ -41,7 +41,8 @@ const fetchMedusaFulfillments = createStep(
     const fulfillmentService = container.resolve<FulfillmentServiceMaybe>(Modules.FULFILLMENT)
 
     const filters = {
-      provider_id: 'dhl',
+      // Medusa stores fulfillment provider ids as `${identifier}_${id}`, i.e. `dhl_dhl`.
+      provider_id: 'dhl_dhl',
       delivered_at: {
         // Only sync statuses for shipments that aren't already delivered.
         $eq: null,
@@ -73,6 +74,7 @@ const fetchMedusaFulfillments = createStep(
     }
 
     const fulfillments = await fulfillmentService.listFulfillments(filters, {
+      relations: ['labels'],
       take,
       ...(typeof skip === 'number' ? { skip } : {}),
     })

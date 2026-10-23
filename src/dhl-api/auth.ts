@@ -1,4 +1,4 @@
-import { Api } from './swagger/Api'
+import { Api, HttpResponse } from './swagger/Api'
 
 /**
  * Get the DHL authentication token.
@@ -26,16 +26,49 @@ export const getAuthToken = async (
     throw new Error('DHL account number is required in database settings')
   }
 
-  const response = await api.authenticate.apiKey({
-    userId: userId,
-    key: apiKey,
-    accountNumbers: [accountNumber],
-  })
-
-  if (!response.ok) {
-    throw new Error(`DHL auth request failed: ${response.statusText}`)
-  }
+  const response = await api.authenticate
+    .apiKey({
+      userId: userId,
+      key: apiKey,
+      accountNumbers: [accountNumber],
+    })
+    .catch((error: unknown) => {
+      const hint =
+        isHttpResponse(error) && (error.status === 401 || error.status === 403)
+          ? ' (check the credentials saved in the admin DHL settings; they take precedence over the provider options)'
+          : ''
+      throw toDhlApiError(`DHL auth request failed${hint}`, error)
+    })
 
   const { accessToken } = response.data
   return accessToken
+}
+
+const isHttpResponse = (error: unknown): error is HttpResponse<unknown, unknown> =>
+  typeof error === 'object' &&
+  error !== null &&
+  typeof (error as { status?: unknown }).status === 'number'
+
+/**
+ * The generated swagger client throws the raw Response on non-2xx, which
+ * serializes to `{"data":null,"error":{}}` and hides the status. Turn it into
+ * an Error that carries the HTTP status and (truncated) response body.
+ */
+export const toDhlApiError = (prefix: string, error: unknown): Error => {
+  if (error instanceof Error) {
+    return error
+  }
+  if (isHttpResponse(error)) {
+    // `error` is the parsed JSON body, or the parse Error when the body isn't JSON (e.g. empty 401s).
+    const parsedBody = error.error
+    const body =
+      parsedBody === null || parsedBody === undefined || parsedBody instanceof Error
+        ? ''
+        : typeof parsedBody === 'string'
+          ? parsedBody
+          : JSON.stringify(parsedBody)
+    const detail = body ? `: ${body.slice(0, 500)}` : ''
+    return new Error(`${prefix} [${error.status} ${error.statusText}]${detail}`)
+  }
+  return new Error(`${prefix}: ${String(error)}`)
 }

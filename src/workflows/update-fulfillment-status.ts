@@ -136,48 +136,56 @@ const updateFulfillmentStatus = createStep(
     }>,
     { container },
   ): Promise<StepResponse<{ fulfillments: FulfillmentDTO[] }>> => {
+    const logger = input._logger ?? (container.resolve('logger') as Logger)
     for (const fulfillment of input.fulfillments) {
-      let deliveredAt: Date | undefined
-      let shippedAt: Date | undefined
-      for (const label of fulfillment.labels) {
-        const trackingCodeWithLatestStatus = input.trackingCodeWithLatestStatus.get(
-          label.tracking_number,
-        )
-        if (!trackingCodeWithLatestStatus) {
-          continue
-        }
-        if (trackingCodeWithLatestStatus.delivered) {
-          deliveredAt = trackingCodeWithLatestStatus.delivered
-        }
-        if (trackingCodeWithLatestStatus.shipped) {
-          shippedAt = trackingCodeWithLatestStatus.shipped
-        }
-      }
-
-      if (shippedAt) {
-        await updateFulfillmentWorkflow(container).run({
-          input: {
-            id: fulfillment.id,
-            shipped_at: shippedAt,
-          },
-        })
-      }
-
-      if (deliveredAt) {
-        const orderId = input.fulfillmentIdToOrderId.get(fulfillment.id)
-        if (!orderId) {
-          input._logger?.warn(
-            `Skipping marking fulfillment ${fulfillment.id} as delivered because orderId could not be resolved`,
+      // One bad fulfillment (e.g. its order was canceled) must not fail the whole sync run.
+      try {
+        let deliveredAt: Date | undefined
+        let shippedAt: Date | undefined
+        for (const label of fulfillment.labels) {
+          const trackingCodeWithLatestStatus = input.trackingCodeWithLatestStatus.get(
+            label.tracking_number,
           )
-          continue
+          if (!trackingCodeWithLatestStatus) {
+            continue
+          }
+          if (trackingCodeWithLatestStatus.delivered) {
+            deliveredAt = trackingCodeWithLatestStatus.delivered
+          }
+          if (trackingCodeWithLatestStatus.shipped) {
+            shippedAt = trackingCodeWithLatestStatus.shipped
+          }
         }
 
-        await markOrderFulfillmentAsDeliveredWorkflow(container).run({
-          input: {
-            fulfillmentId: fulfillment.id,
-            orderId,
-          },
-        })
+        if (shippedAt && !fulfillment.shipped_at) {
+          await updateFulfillmentWorkflow(container).run({
+            input: {
+              id: fulfillment.id,
+              shipped_at: shippedAt,
+            },
+          })
+        }
+
+        if (deliveredAt) {
+          const orderId = input.fulfillmentIdToOrderId.get(fulfillment.id)
+          if (!orderId) {
+            input._logger?.warn(
+              `Skipping marking fulfillment ${fulfillment.id} as delivered because orderId could not be resolved`,
+            )
+            continue
+          }
+
+          await markOrderFulfillmentAsDeliveredWorkflow(container).run({
+            input: {
+              fulfillmentId: fulfillment.id,
+              orderId,
+            },
+          })
+        }
+      } catch (error) {
+        logger.error(
+          `Failed to sync DHL status for fulfillment ${fulfillment.id}: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+        )
       }
     }
 

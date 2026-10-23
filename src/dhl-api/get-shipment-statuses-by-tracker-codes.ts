@@ -1,6 +1,7 @@
 import { Logger } from '@medusajs/framework/types'
 import { DHLShipmentStatusResponse } from './types'
 import { Api } from './swagger/Api'
+import { toDhlApiError } from './auth'
 
 /**
  * Gets the shipment statuses by tracker codes from the DHL API.
@@ -23,20 +24,19 @@ export const getShipmentStatusesByTrackerCodes = async (
     baseApiParams: { headers: { Authorization: `Bearer ${token}` } },
   })
 
-  const response = await api.trackTrace.getTrackAndTrace({
-    key: trackerCodes,
-    role: 'shipper',
-  })
-
-  if (!response.ok) {
-    const text = await response.text()
-    if (logger) {
-      logger.error(
-        `DHL get shipment statuses by tracker codes failed [${response.status}]: ${text}`,
-      )
-    }
-    throw new Error(`DHL get shipment statuses by tracker codes failed: ${response.statusText}`)
-  }
+  const response = await api.trackTrace
+    .getTrackAndTrace({
+      // DHL wants one comma-separated `key`; repeated `key=` params only return the last shipment.
+      key: [trackerCodes.join(',')],
+      role: 'shipper',
+    })
+    .catch((error: unknown) => {
+      const dhlError = toDhlApiError('DHL get shipment statuses by tracker codes failed', error)
+      if (logger) {
+        logger.error(dhlError.message)
+      }
+      throw dhlError
+    })
   const result = response.data
   if (logger) {
     logger.log(
